@@ -1,0 +1,19 @@
+{
+  "name": "VSEH PRO",
+  "short_name": "VSEH",
+  "display": "standalone",
+  "background_color": "#f4f7fe",
+  "theme_color": "#f4f7fe",
+  "icons": [
+    {
+      "src": "./logo.jpeg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "./logo.jpeg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

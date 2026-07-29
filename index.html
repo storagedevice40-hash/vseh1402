@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>VSEH PRO - AI AUTOPILOT</title>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="VSEH PRO">
+    <meta name="theme-color" content="#f4f7fe">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="apple-touch-icon" href="./logo.jpeg">
+    <link rel="shortcut icon" href="./logo.jpeg">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+    
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body class="flex flex-col h-screen overflow-hidden w-full max-w-500 relative transition-colors duration-300">
+
+    <div id="toast" class="fixed left-1/2 pointer-events-none flex justify-center" style="z-index: 2147483647 !important; top: -100px; opacity: 0; transform: translate(-50%, -20px) scale(0.85); max-width: 95%; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);">
+        <div class="bg-gray-900 text-white px-5 py-3 rounded-3xl shadow-2xl flex items-center justify-center text-[10px] font-black uppercase tracking-widest border border-gray-700 whitespace-nowrap min-w-[180px]">
+            <i class="fas fa-bell text-indigo-400 mr-2 text-sm animate-pulse"></i> <span id="toastMsg">Action Executed</span>
+        </div>
+    </div>
+
+    <div id="globalLoader" class="fixed inset-0 bg-[#f4f7fe] dark-target z-[999] flex flex-col items-center justify-center p-6 text-center">
+        <div class="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-5"></div>
+        <p class="text-indigo-600 font-black tracking-widest text-sm animate-pulse uppercase">INITIALIZING AI SYSTEM...</p>
+        <div id="errorBox" class="hidden w-full bg-red-50 border-2 border-red-200 p-5 rounded-2xl mt-6 shadow-xl"></div>
+    </div>
+
+    <header class="glass-panel mx-4 mt-4 mb-2 rounded-3xl z-20 flex justify-between items-start p-4">
+        <div class="flex flex-col flex-1 min-w-0 pr-2">
+            <h1 class="text-xl font-black tracking-tight text-grad uppercase leading-tight whitespace-normal break-words">VIJAY SIR EDUCATION HUB</h1>
+            <div class="flex items-center space-x-1.5 text-8 font-black text-gray-400 uppercase mt-1 tracking-widest whitespace-nowrap overflow-hidden">
+                <i class="far fa-calendar-alt"></i> <span id="headerDate">--/--/----</span>
+                <span class="text-gray-300">|</span>
+                <i class="far fa-clock"></i> <span id="headerTime">00:00</span>
+            </div>
+        </div>
+        <div class="flex flex-col items-end shrink-0 mt-0.5">
+            <div class="flex items-center bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-100 blink shadow-sm mb-1">
+                <span class="w-1 h-1 bg-red-600 rounded-full mr-1"></span>
+                <span class="text-[7px] font-black uppercase tracking-widest leading-none mt-0.5">AI PRO</span>
+            </div>
+            <span class="font-bold text-gray-400 uppercase tracking-widest" style="font-size: 7px; white-space: nowrap;">Created by Guna</span>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto px-4 w-full">
+        <section id="dashboard" class="view-section active">
+            
+
+
+            <div class="flex justify-between items-end mb-4 px-1">
+                <h2 class="text-2xl font-black text-gray-800 tracking-tight">Overview</h2>
+                <span class="text-10 font-black text-indigo-600 bg-indigo-100 px-2.5 py-1 rounded-lg uppercase">Dashboard</span>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <div onclick="navigate('students')" class="grad-card-1 p-5 rounded-24 shadow-lg text-white cursor-pointer active:scale-95 transition">
+                    <div class="w-8 h-8 bg-white bg-opacity-20 rounded-xl flex items-center justify-center mb-3"><i class="fas fa-users text-sm"></i></div>
+                    <p class="text-9 font-black opacity-80 uppercase tracking-widest">TOTAL STUDENTS</p>
+                    <p class="text-3xl font-black mt-1" id="dash-all">0</p>
+                </div>
+                <div onclick="navigate('paid-students')" class="grad-card-2 p-5 rounded-24 shadow-lg text-white cursor-pointer active:scale-95 transition">
+                    <div class="w-8 h-8 bg-white bg-opacity-20 rounded-xl flex items-center justify-center mb-3"><i class="fas fa-check-double text-sm"></i></div>
+                    <p class="text-9 font-black opacity-80 uppercase tracking-widest">PAID THIS MONTH</p>
+                    <p class="text-3xl font-black mt-1" id="dash-paid">0</p>
+                </div>
+                <div class="grad-card-3 p-5 rounded-24 shadow-lg text-white col-span-2 relative overflow-hidden">
+                    <div class="absolute right-0 top-0 w-32 h-32 bg-white bg-opacity-10 rounded-full blur-2xl"></div>
+                    <div class="relative z-10 w-full">
+                        <div class="flex justify-between items-center w-full mb-1">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-6 h-6 bg-white bg-opacity-20 rounded-lg flex items-center justify-center"><i class="fas fa-wallet text-10"></i></div>
+                                <p class="text-10 font-black opacity-90 uppercase tracking-widest">COLLECTED REVENUE</p>
+                            </div>
+                            <button onclick="toggleRevenue()" class="p-2 active:scale-90 transition"><i id="revenue-eye" class="fas fa-eye-slash text-white opacity-80 text-lg"></i></button>
+                        </div>
+                        <p class="text-4xl font-black" id="dash-amt" data-val="0">₹ •••••</p>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-24 shadow-sm border border-gray-100 col-span-2 flex justify-between items-center relative overflow-hidden">
+                    <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>
+                    <div class="ml-2">
+                        <p class="text-10 font-black text-gray-400 uppercase tracking-widest mb-1">PENDING STUDENTS FEES</p>
+                        <p class="text-xl font-black text-gray-800" id="dash-pend">0 <span class="text-xs text-gray-400 font-bold ml-1">Students</span></p>
+                    </div>
+                    <button onclick="navigate('defaulters')" class="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center active:scale-90 transition"><i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+
+            <h3 class="text-10 font-black text-gray-500 tracking-widest uppercase mb-3 px-1"><i class="fas fa-bolt text-yellow-500 mr-1.5"></i> RECENT PAYMENTS</h3>
+            <div id="recent-list" class="space-y-3"></div>
+        </section>
+
+        <section id="attendance" class="view-section">
+            <div class="flex justify-between items-end mb-6 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-gray-800 tracking-tight">Attendance</h2>
+                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">Mark Daily Status</p>
+                </div>
+                <button onclick="triggerVoiceAttendance()" class="bg-purple-600 text-white px-3 py-2.5 rounded-xl text-xs font-black shadow-lg active:scale-95 transition flex items-center uppercase tracking-wider">
+                    <i class="fas fa-microphone mr-2 animate-pulse"></i> AI Audio
+                </button>
+            </div>
+            
+            <div class="glass-panel rounded-32 p-5 mb-5 shadow-sm">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Class</label>
+                        <select id="attClass" onchange="loadAttendanceStudents()" class="mobile-input bg-gray-50 force-uppercase"><option value="">- SELECT -</option></select>
+                    </div>
+                    <div>
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Date</label>
+                        <input type="date" id="attDate" onchange="updateClassStatusIndicator(); loadAttendanceStudents();" class="mobile-input bg-gray-50 text-xs px-2">
+                    </div>
+                </div>
+                <div id="attStatusIndicator" class="mt-3 flex flex-wrap gap-2"></div>
+            </div>
+            
+            <div class="flex justify-between items-center mb-3 px-1">
+                <h3 class="text-10 font-black text-gray-500 tracking-widest uppercase"><i class="fas fa-users text-blue-500 mr-1.5"></i> STUDENT LIST</h3>
+                <button onclick="markAllPresent()" class="text-10 font-black text-green-600 bg-green-50 px-3 py-1 rounded-lg uppercase border border-green-200 active:scale-95 transition">All Present</button>
+            </div>
+            
+            <div id="attendance-list" class="space-y-3 mb-6">
+                <p class="text-center text-gray-400 text-xs font-bold mt-10">Select a class to mark attendance</p>
+            </div>
+            
+            <button onclick="submitAttendance()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-black text-sm mt-2 shadow-lg active:scale-95 transition uppercase tracking-widest flex items-center justify-center">
+                SAVE & SEND ALERTS <i class="fas fa-paper-plane ml-2 text-lg"></i>
+            </button>
+        </section>
+
+        <section id="aihub" class="view-section relative">
+            <div class="flex justify-between items-end mb-4 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-purple-600 tracking-tight">AI Co-Pilot</h2>
+                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">Super-Advanced Tools</p>
+                </div>
+                <span class="text-10 font-black text-white bg-purple-600 px-2.5 py-1 rounded-lg uppercase shadow-md"><i class="fas fa-brain mr-1"></i> Gemini Active</span>
+            </div>
+            
+            <div class="ai-tools-scroll mb-4 pb-2">
+                <button onclick="sendAiCommand('Show my daily todo list for today.')" class="ai-chip text-9 bg-purple-50 text-purple-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-purple-200 snap-center"><i class="fas fa-list-check mr-2"></i> Daily To-Do</button>
+                <button onclick="sendAiCommand('Generate a 20 marks test paper for Physics.')" class="ai-chip text-9 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-indigo-200 snap-center"><i class="fas fa-file-signature mr-2"></i> Create Test</button>
+                <button onclick="sendAiCommand('Draft a polite reply to a parent asking for fee extension.')" class="ai-chip text-9 bg-pink-50 text-pink-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-pink-200 snap-center"><i class="fas fa-comments mr-2"></i> Parent Reply</button>
+                <button onclick="sendAiCommand('Analyze revenue projection for the next 30 days based on payments.')" class="ai-chip text-9 bg-green-50 text-green-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-green-200 snap-center"><i class="fas fa-chart-line mr-2"></i> Rev Forecast</button>
+                <button onclick="sendAiCommand('Provide a syllabus pace alert. Are we lagging?')" class="ai-chip text-9 bg-red-50 text-red-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-red-200 snap-center"><i class="fas fa-triangle-exclamation mr-2"></i> Syllabus Alert</button>
+            </div>
+
+            <div id="ai-chat-history" class="space-y-4 mb-20 overflow-y-auto" style="height: 48vh;">
+                <div class="glass-panel p-4 rounded-24 rounded-tl-none border-l-4 border-purple-500 shadow-sm">
+                    <p class="text-xs font-bold text-gray-700 dark:text-gray-200">Hello Vijay Sir! Main aapka autonomous AI Assistant hoon. Upar diye gaye kisi bhi smart tool par click karein ya apna command type karein.</p>
+                </div>
+            </div>
+
+            <div class="fixed bottom-20 left-4 right-4 max-w-500 mx-auto z-30 pb-2">
+                <div class="glass-panel rounded-full p-1.5 flex items-center shadow-xl border border-gray-200 dark:border-gray-700">
+                    <button onclick="simulateAudioInput()" class="w-10 h-10 text-gray-400 hover:text-purple-600 flex items-center justify-center transition"><i class="fas fa-microphone"></i></button>
+                    <input type="text" id="ai-input" placeholder="Type command..." class="flex-1 bg-transparent border-none outline-none px-2 text-sm font-bold text-gray-700 dark:text-gray-200" onkeypress="if(event.key === 'Enter') sendAiCommand(this.value)">
+                    <button onclick="sendAiCommand(document.getElementById('ai-input').value)" class="w-10 h-10 bg-purple-600 text-white rounded-full flex items-center justify-center active:scale-90 transition shadow-md"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </section>
+
+        <section id="students" class="view-section">
+            <div class="flex justify-between items-end mb-6 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-gray-800 tracking-tight">Directory</h2>
+                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">All Students</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="generateStudentsPDF()" class="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 px-4 py-3 rounded-2xl font-black text-xs shadow-sm active:scale-95 transition flex items-center border border-gray-200 dark:border-slate-700 uppercase tracking-wider">
+                        <i class="fas fa-file-pdf mr-2 text-red-500 text-sm"></i> Get PDF
+                    </button>
+                    <button onclick="openModal()" class="bg-indigo-600 text-white px-4 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition flex items-center uppercase tracking-wider"><i class="fas fa-user-plus mr-2"></i> ADD</button>
+                </div>
+            </div>
+            <div class="relative mb-6">
+                <div class="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
+                    <i class="fas fa-search text-gray-400 text-lg"></i>
+                </div>
+                <input type="text" id="searchInput" oninput="renderStudents()" placeholder="SEARCH BY NAME OR PHONE..." class="mobile-input force-uppercase shadow-sm w-full" style="padding-left: 3.2rem;">
+            </div>
+            <div id="students-list" class="space-y-4"></div>
+        </section>
+
+        <section id="defaulters" class="view-section">
+            <div class="flex justify-between items-end mb-6 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-red-600 tracking-tight">Pending Dues</h2>
+                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">>30 DAYS UNPAID</p>
+                </div>
+                <div class="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600"><i class="fas fa-exclamation-triangle text-xl"></i></div>
+            </div>
+            <div id="defaulters-list" class="space-y-4"></div>
+        </section>
+
+        <section id="paid-students" class="view-section">
+            <div class="flex justify-between items-end mb-6 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-green-600 tracking-tight">Paid This Month</h2>
+                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">CLEARED DUES</p>
+                </div>
+                <div class="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center text-green-600"><i class="fas fa-check-circle text-xl"></i></div>
+            </div>
+            <div id="paid-students-list" class="space-y-4"></div>
+        </section>
+
+        <section id="fee" class="view-section">
+            <div class="text-center mb-8 pt-4">
+                <div class="w-20 h-20 mx-auto bg-green-100 rounded-32 flex items-center justify-center mb-4 transform rotate-3 shadow-sm">
+                    <i class="fas fa-rupee-sign text-4xl text-green-600 transform -rotate-3"></i>
+                </div>
+                <h2 class="text-2xl font-black text-gray-800 tracking-tight">Collect Fee</h2>
+                <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">SECURE PAYMENT ENTRY</p>
+            </div>
+            
+            <div class="glass-panel rounded-32 p-6">
+                <form id="feeForm" onsubmit="processFee(event)" class="space-y-5">
+                    <div>
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">SELECT CLASS (OPTIONAL)</label>
+                        <select id="feeClass" onchange="populateFeeStudents()" class="mobile-input bg-gray-50"><option value="">-- ALL CLASSES --</option></select>
+                    </div>
+                    <div>
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">SEARCH STUDENT</label>
+                        <div class="relative">
+                            <input type="text" id="feeStudentSearch" oninput="filterFeeStudents()" placeholder="START TYPING NAME..." class="mobile-input force-uppercase bg-gray-50" autocomplete="off">
+                            <div id="feeStudentList" class="hidden absolute top-full left-0 right-0 bg-white shadow-2xl border border-gray-100 rounded-xl mt-1 z-50 max-h-48 overflow-y-auto p-2"></div>
+                            <input type="hidden" id="feeStudentId" required>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">FEE MONTH</label>
+                            <select id="feeMonth" required class="mobile-input bg-gray-50 force-uppercase"><option value="January">Jan</option><option value="February">Feb</option><option value="March">Mar</option><option value="April">Apr</option><option value="May">May</option><option value="June">Jun</option><option value="July">Jul</option><option value="August">Aug</option><option value="September">Sep</option><option value="October">Oct</option><option value="November">Nov</option><option value="December">Dec</option></select>
+                        </div>
+                        <div>
+                            <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">DATE</label>
+                            <input type="date" id="feeDate" required class="mobile-input bg-gray-50 text-xs">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">COLLECTED AMOUNT (₹)</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                <span class="text-green-500 font-black text-lg">₹</span>
+                            </div>
+                            <input type="number" inputmode="numeric" id="feeAmount" required class="mobile-input bg-green-50 text-green-600 text-xl tracking-wider border-green-200" style="padding-left: 2.5rem;" oninput="calculateRemaining()">
+                        </div>
+                        <div id="feeRemainingBox" class="hidden mt-2 text-right">
+                            <span class="text-[9px] font-black uppercase tracking-widest bg-red-50 text-red-500 px-2.5 py-1 rounded-md border border-red-100" id="feeRemainingText">REMAINING: ₹0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="pt-2">
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-2">PAYMENT MODE</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button type="button" onclick="setMode('ONLINE / UPI')" id="mode-UPI" class="mode-btn bg-gray-50 py-3.5 rounded-xl text-11 font-black border-2 border-gray-200 text-gray-500 uppercase flex justify-center items-center"><i class="fas fa-qrcode mr-2 text-lg"></i> ONLINE</button>
+                            <button type="button" onclick="setMode('CASH')" id="mode-CASH" class="mode-btn bg-gray-50 py-3.5 rounded-xl text-11 font-black border-2 border-gray-200 text-gray-500 uppercase flex justify-center items-center"><i class="fas fa-money-bill-wave mr-2 text-lg"></i> CASH</button>
+                            <input type="hidden" id="feeMode" required>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-green-600 text-white py-4 rounded-xl font-black text-sm mt-6 shadow-lg active:scale-95 transition uppercase tracking-widest flex items-center justify-center">
+                        SAVE & AUTO DISPATCH <i class="fas fa-robot ml-2 text-lg"></i>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <section id="settings" class="view-section">
+            <div class="flex justify-between items-center mb-6 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-gray-800 tracking-tight">Configuration</h2>
+                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">Manage System Settings</p>
+                </div>
+                
+                <div class="flex items-center space-x-3">
+                    <button onclick="toggleTheme()" class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 active:scale-90 transition shadow-inner">
+                        <i id="theme-icon" class="fas fa-moon text-sm"></i>
+                    </button>
+                    <div class="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-xl shadow-sm border border-gray-100">
+                        <span class="text-9 font-black text-gray-400 uppercase tracking-widest" id="set-lock-label">LOCKED</span>
+                        <button onclick="toggleSetLock()" id="set-lock-btn" class="w-10 h-6 bg-gray-300 rounded-full relative transition-all duration-300 shadow-inner">
+                            <div class="w-5 h-5 bg-white rounded-full absolute left-0.5 top-0.5 transition-all shadow-sm" id="set-lock-thumb"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <form id="settingsForm" onsubmit="saveSettings(event)">
+                <div class="glass-panel rounded-32 p-6 mb-6">
+                    <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                        <h3 class="text-10 font-black text-indigo-600 tracking-widest uppercase"><i class="fas fa-coins mr-1.5"></i> Class Fees</h3>
+                        <button type="button" onclick="toggleClsLock()" class="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner">
+                            <i id="cls-lock-icon" class="fas fa-lock text-xs"></i>
+                        </button>
+                    </div>
+                    <div id="dynamicClassesBox" class="space-y-4"></div>
+                    <button type="button" onclick="addNewClassInput()" id="btn-add-cls" disabled class="w-full bg-indigo-50 text-indigo-600 py-3 rounded-xl font-black text-xs mt-4 uppercase disabled:hidden transition-all"><i class="fas fa-plus mr-2"></i> ADD NEW CLASS TIER</button>
+                </div>
+                
+                <div class="glass-panel rounded-32 p-6">
+                    <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                        <h3 class="text-10 font-black text-green-600 tracking-widest uppercase"><i class="fab fa-whatsapp mr-1.5"></i> WhatsApp API config</h3>
+                        <button type="button" onclick="toggleWaLock()" class="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner">
+                            <i id="wa-lock-icon" class="fas fa-lock text-xs"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Instance ID</label>
+                            <input type="text" id="waInstanceId" class="mobile-input wa-setting" placeholder="e.g. 123456" disabled>
+                        </div>
+                        <div>
+                            <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Access Token</label>
+                            <input type="text" id="waToken" class="mobile-input wa-setting" placeholder="e.g. abc123def456" disabled>
+                        </div>
+                    </div>
+                    <button type="submit" id="btn-save-set" disabled class="w-full bg-gray-900 text-white py-5 rounded-2xl font-black mt-6 disabled:opacity-30 transition-all text-xs tracking-widest uppercase shadow-lg active:scale-95">UPDATE ALL SETTINGS</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <button onclick="navigate('fee')" class="fixed bottom-24 right-4 w-14 h-14 bg-green-500 text-white rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform border-4 border-white dark:border-gray-800">
+        <i class="fas fa-plus text-2xl"></i>
+    </button>
+
+    <nav class="fixed bottom-0 w-full max-w-500 glass-nav flex justify-between px-3 pt-3 pb-safe z-40 rounded-t-3xl border-t border-gray-100">
+        <button onclick="navigate('dashboard')" id="nav-dashboard" class="mob-nav flex-1 flex flex-col items-center pb-2 text-indigo-600">
+            <div class="w-8 h-8 flex items-center justify-center rounded-full mb-0.5 nav-icon-bg bg-indigo-50"><i class="fas fa-home text-lg"></i></div>
+            <span class="text-8 font-black uppercase">Home</span>
+        </button>
+        <button onclick="navigate('students')" id="nav-students" class="mob-nav flex-1 flex flex-col items-center pb-2 text-gray-400">
+            <div class="w-8 h-8 flex items-center justify-center rounded-full mb-0.5 nav-icon-bg"><i class="fas fa-users text-lg"></i></div>
+            <span class="text-8 font-black uppercase">Students</span>
+        </button>
+        <button onclick="navigate('attendance')" id="nav-attendance" class="mob-nav flex-1 flex flex-col items-center pb-2 text-gray-400">
+            <div class="w-8 h-8 flex items-center justify-center rounded-full mb-0.5 nav-icon-bg"><i class="fas fa-clipboard-user text-lg"></i></div>
+            <span class="text-8 font-black uppercase">Attend</span>
+        </button>
+        <button onclick="navigate('aihub')" id="nav-aihub" class="mob-nav flex-1 flex flex-col items-center pb-2 text-gray-400">
+            <div class="w-8 h-8 flex items-center justify-center rounded-full mb-0.5 nav-icon-bg"><i class="fas fa-robot text-lg"></i></div>
+            <span class="text-8 font-black uppercase">AI Hub</span>
+        </button>
+        <button onclick="navigate('settings')" id="nav-settings" class="mob-nav flex-1 flex flex-col items-center pb-2 text-gray-400">
+            <div class="w-8 h-8 flex items-center justify-center rounded-full mb-0.5 nav-icon-bg"><i class="fas fa-cog text-lg"></i></div>
+            <span class="text-8 font-black uppercase">Settings</span>
+        </button>
+    </nav>
+
+    <div id="addModal" class="fixed inset-0 bg-gray-900 bg-opacity-60 z-50 hidden flex flex-col justify-end transition-opacity duration-300">
+        <div class="absolute inset-0" onclick="closeModal()"></div>
+        <div class="bg-white w-full max-w-500 mx-auto rounded-t-32 px-5 pt-3 pb-8 transform transition-transform translate-y-full h-[90vh] overflow-y-auto relative premium-shadow" id="modalContent">
+            <div class="drag-handle"></div>
+            
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-black text-gray-800 uppercase" id="modalTitle">Registration</h3>
+                <div class="flex items-center space-x-3">
+                    <button type="button" id="modalLockBtn" onclick="toggleModalLock()" class="hidden w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 active:scale-90 shadow-sm transition"><i id="modalLockIcon" class="fas fa-lock"></i></button>
+                    <button type="button" onclick="closeModal()" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 active:scale-90"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+
+            <div id="aiStudentSummaryCard" class="hidden bg-purple-50 border border-purple-100 rounded-2xl p-3 mb-4">
+                <p class="text-[8px] font-black text-purple-600 uppercase tracking-widest"><i class="fas fa-brain"></i> AI Micro-Metric Insight Vector</p>
+                <p id="aiStudentSummaryText" class="text-10 font-bold text-purple-950 mt-1 uppercase leading-snug"></p>
+                <button type="button" onclick="triggerPtmNoteGeneration()" class="mt-2 bg-purple-600 text-white font-black text-[8px] px-2 py-1 rounded-md uppercase tracking-wider shadow-sm">Get AI PTM Report</button>
+            </div>
+            
+            <form id="addForm" onsubmit="saveStudentToServer(event)" class="space-y-4">
+                <input type="hidden" id="stuId"><input type="hidden" id="stuRowIndex">
+                
+                <div>
+                    <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Full Name</label>
+                    <input type="text" id="stuName" required class="mobile-input force-uppercase" placeholder="STUDENT NAME" oninput="autoGuessGender()">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Gender</label>
+                        <select id="stuGender" required class="mobile-input bg-white force-uppercase">
+                            <option value="" disabled selected>-- SELECT --</option>
+                            <option value="Male">MALE</option><option value="Female">FEMALE</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Class</label>
+                        <select id="stuClass" required onchange="autoFillSetupFee()" class="mobile-input bg-white"><option value="">-- SELECT --</option></select>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">WhatsApp Mobile</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <span class="text-sm font-black text-gray-400">+91</span>
+                        </div>
+                        <input type="tel" inputmode="numeric" id="stuPhone" required pattern="[0-9]{10}" maxlength="10" class="mobile-input tracking-widest" placeholder="9876543210" style="padding-left: 3rem;" oninput="this.value=this.value.replace(/[^0-9]/g,''); validatePhone(this)">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Fee (₹)</label><input type="number" inputmode="numeric" id="stuFee" required class="mobile-input border-indigo-200 bg-indigo-50 text-indigo-700 text-lg"></div>
+                    <div><label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Join Date <span class="text-8 normal-case">(DD/MM/YYYY)</span></label><input type="date" id="stuDate" required class="mobile-input text-11 p-[13px]"></div>
+                </div>
+                
+                <div id="deleteBox" class="hidden mt-6 pt-5 border-t border-gray-100">
+                    <div class="bg-red-50 p-3 rounded-20 flex justify-between items-center border border-red-100">
+                        <button type="button" onclick="toggleDelLock()" id="del-lock-btn" class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-gray-400 shadow-sm"><i class="fas fa-lock" id="del-lock-icon"></i></button>
+                        <button type="button" id="btn-actual-del" disabled onclick="confirmDeleteFromModal()" class="bg-red-500 text-white px-5 py-3 rounded-xl font-black text-xs uppercase opacity-40 active:scale-95">Delete Data</button>
+                    </div>
+                </div>
+
+                <button type="submit" id="modalSaveBtn" class="w-full bg-gray-900 text-white py-4 rounded-xl font-black text-sm mt-6 active:scale-95 shadow-lg uppercase tracking-widest transition">Save Profile</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="./script.js"></script>
+</body>
+</html>
