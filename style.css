@@ -80,3 +80,28 @@ body {
         .ai-tools-scroll::-webkit-scrollbar { height: 4px; display: block; }
         .ai-tools-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
         body.dark-mode .ai-tools-scroll::-webkit-scrollbar-thumb { background-color: #475569; }
+/* Micro Recent Controls */
+#recent-lock-btn {
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    max-width: 18px !important;
+    padding: 0 !important;
+}
+#recent-lock-icon {
+    font-size: 8px !important;
+    line-height: 1 !important;
+}
+#btn-clear-recent {
+    height: 18px !important;
+    max-height: 18px !important;
+    font-size: 8px !important;
+    line-height: 1 !important;
+    padding: 0 6px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.5px !important;
+}
+#btn-clear-recent i {
+    font-size: 7px !important;
+    margin-right: 3px !important;
+}

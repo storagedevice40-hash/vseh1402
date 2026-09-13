@@ -1,0 +1,54 @@
+<form id="addForm" onsubmit="saveStudentToServer(event)" class="space-y-4">
+                <input type="hidden" id="stuId"><input type="hidden" id="stuRowIndex">
+                
+                <div>
+                    <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Full Name</label>
+                    <input type="text" id="stuName" required class="mobile-input force-uppercase" placeholder="STUDENT NAME" oninput="autoGuessGender()">
+                </div>
+                
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Gender</label>
+                        <select id="stuGender" required class="mobile-input bg-white force-uppercase text-xs p-1">
+                            <option value="" disabled selected>- SELECT -</option>
+                            <option value="Male">MALE</option><option value="Female">FEMALE</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Shift</label>
+                        <select id="stuShift" required onchange="filterClasses('stuShift', 'stuClass')" class="mobile-input bg-white force-uppercase text-xs p-1">
+                            <option value="" disabled selected>- SHIFT -</option>
+                            <option value="Morning">MORNING</option>
+                            <option value="Evening">EVENING</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Class</label>
+                        <select id="stuClass" required onchange="autoFillSetupFee()" class="mobile-input bg-white text-xs p-1"><option value="">- CLASS -</option></select>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">WhatsApp Mobile</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <span class="text-sm font-black text-gray-400">+91</span>
+                        </div>
+                        <input type="tel" inputmode="numeric" id="stuPhone" required pattern="[0-9]{10}" maxlength="10" class="mobile-input tracking-widest" placeholder="9876543210" style="padding-left: 3rem;" oninput="this.value=this.value.replace(/[^0-9]/g,''); validatePhone(this)">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Fee (₹)</label><input type="number" inputmode="numeric" id="stuFee" required class="mobile-input border-indigo-200 bg-indigo-50 text-indigo-700 text-lg"></div>
+                    <div><label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Join Date <span class="text-8 normal-case">(DD/MM/YYYY)</span></label><input type="date" id="stuDate" required class="mobile-input text-11 p-[13px]"></div>
+                </div>
+                
+                <div id="deleteBox" class="hidden mt-6 pt-5 border-t border-gray-100">
+                    <div class="bg-red-50 p-3 rounded-20 flex justify-between items-center border border-red-100">
+                        <button type="button" onclick="toggleDelLock()" id="del-lock-btn" class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-gray-400 shadow-sm"><i class="fas fa-lock" id="del-lock-icon"></i></button>
+                        <button type="button" id="btn-actual-del" disabled onclick="confirmDeleteFromModal()" class="bg-red-500 text-white px-5 py-3 rounded-xl font-black text-xs uppercase opacity-40 active:scale-95">Delete Data</button>
+                    </div>
+                </div>
+
+                <button type="submit" id="modalSaveBtn" class="w-full bg-gray-900 text-white py-4 rounded-xl font-black text-sm mt-6 active:scale-95 shadow-lg uppercase tracking-widest transition">Save Profile</button>
+            </form>

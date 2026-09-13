@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
     
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./style.css?v=2.6">
 </head>
 <body class="flex flex-col h-screen overflow-hidden w-full max-w-500 relative transition-colors duration-300">
 
@@ -35,16 +35,16 @@
         <div id="errorBox" class="hidden w-full bg-red-50 border-2 border-red-200 p-5 rounded-2xl mt-6 shadow-xl"></div>
     </div>
 
-    <header class="glass-panel mx-4 mt-4 mb-2 rounded-3xl z-20 flex justify-between items-start p-4">
-        <div class="flex flex-col flex-1 min-w-0 pr-2">
-            <h1 class="text-xl font-black tracking-tight text-grad uppercase leading-tight whitespace-normal break-words">VIJAY SIR EDUCATION HUB</h1>
-            <div class="flex items-center space-x-1.5 text-8 font-black text-gray-400 uppercase mt-1 tracking-widest whitespace-nowrap overflow-hidden">
+    <header id="mainHeader" class="glass-panel mx-4 mt-4 mb-2 rounded-3xl z-20 flex justify-between items-start p-4 transition-all duration-300">
+        <div id="headerTitleCol" class="flex flex-col flex-1 min-w-0 pr-2">
+            <h1 id="headerTitle" class="text-xl font-black tracking-tight text-grad uppercase leading-tight whitespace-normal break-words transition-all duration-300">VIJAY SIR EDUCATION HUB</h1>
+            <div id="headerSub" class="flex items-center space-x-1.5 text-8 font-black text-gray-400 uppercase mt-1 tracking-widest whitespace-nowrap overflow-hidden transition-all duration-300">
                 <i class="far fa-calendar-alt"></i> <span id="headerDate">--/--/----</span>
                 <span class="text-gray-300">|</span>
                 <i class="far fa-clock"></i> <span id="headerTime">00:00</span>
             </div>
         </div>
-        <div class="flex flex-col items-end shrink-0 mt-0.5">
+        <div id="headerBadge" class="flex flex-col items-end shrink-0 mt-0.5 transition-all duration-300">
             <div class="flex items-center bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-100 blink shadow-sm mb-1">
                 <span class="w-1 h-1 bg-red-600 rounded-full mr-1"></span>
                 <span class="text-[7px] font-black uppercase tracking-widest leading-none mt-0.5">AI PRO</span>
@@ -97,7 +97,19 @@
                 </div>
             </div>
 
-            <h3 class="text-10 font-black text-gray-500 tracking-widest uppercase mb-3 px-1"><i class="fas fa-bolt text-yellow-500 mr-1.5"></i> RECENT PAYMENTS</h3>
+                        <div class="flex justify-between items-center mb-3 px-1">
+                <h3 class="text-10 font-black text-gray-500 tracking-widest uppercase flex items-center">
+                    <i class="fas fa-bolt text-yellow-500 mr-1.5"></i> RECENT PAYMENTS
+                </h3>
+                <div class="flex items-center space-x-1.5">
+                    <button type="button" onclick="toggleRecentLock()" id="recent-lock-btn" style="width: 18px !important; height: 18px !important; min-width: 18px !important; padding: 0 !important;" class="bg-red-50 text-red-500 rounded flex items-center justify-center border border-red-100 active:scale-90 transition shadow-none" title="Unlock to enable Clear Recent">
+                        <i id="recent-lock-icon" class="fas fa-lock" style="font-size: 8px !important; line-height: 1 !important;"></i>
+                    </button>
+                    <button type="button" onclick="clearRecentPayments()" id="btn-clear-recent" disabled style="height: 18px !important; font-size: 8px !important; line-height: 1 !important; padding: 0 6px !important;" class="bg-red-50 text-red-500 border border-red-100 rounded font-black uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition flex items-center shadow-none">
+                        <i class="fas fa-trash-alt" style="font-size: 7px !important; margin-right: 3px !important;"></i> Clear Recent
+                    </button>
+                </div>
+            </div>
             <div id="recent-list" class="space-y-3"></div>
         </section>
 
@@ -113,15 +125,24 @@
             </div>
             
             <div class="glass-panel rounded-32 p-5 mb-5 shadow-sm">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-4 mb-3">
+                    <div>
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Shift</label>
+                        <select id="attShift" onchange="filterClasses('attShift', 'attClass'); updateClassStatusIndicator(); loadAttendanceStudents();" class="mobile-input bg-gray-50 force-uppercase">
+                            <option value="Evening" selected>Evening</option>
+                            <option value="Morning">Morning</option>
+                        </select>
+                    </div>
                     <div>
                         <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Class</label>
-                        <select id="attClass" onchange="loadAttendanceStudents()" class="mobile-input bg-gray-50 force-uppercase"><option value="">- SELECT -</option></select>
+                        <select id="attClass" onchange="loadAttendanceStudents()" class="mobile-input bg-gray-50 force-uppercase">
+                            <option value="All">All Classes</option>
+                        </select>
                     </div>
-                    <div>
-                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Date</label>
-                        <input type="date" id="attDate" onchange="updateClassStatusIndicator(); loadAttendanceStudents();" class="mobile-input bg-gray-50 text-xs px-2">
-                    </div>
+                </div>
+                <div>
+                    <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Date</label>
+                    <input type="date" id="attDate" onchange="updateClassStatusIndicator(); loadAttendanceStudents();" class="mobile-input bg-gray-50 text-xs px-2">
                 </div>
                 <div id="attStatusIndicator" class="mt-3 flex flex-wrap gap-2"></div>
             </div>
@@ -182,25 +203,53 @@
                     <button onclick="generateStudentsPDF()" class="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 px-4 py-3 rounded-2xl font-black text-xs shadow-sm active:scale-95 transition flex items-center border border-gray-200 dark:border-slate-700 uppercase tracking-wider">
                         <i class="fas fa-file-pdf mr-2 text-red-500 text-sm"></i> Get PDF
                     </button>
-                    <button onclick="openModal()" class="bg-indigo-600 text-white px-4 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition flex items-center uppercase tracking-wider"><i class="fas fa-user-plus mr-2"></i> ADD</button>
+                    <button onclick="openModal('addModal')" class="bg-indigo-600 text-white px-4 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition flex items-center uppercase tracking-wider"><i class="fas fa-user-plus mr-2"></i> ADD</button>
                 </div>
             </div>
-            <div class="relative mb-6">
-                <div class="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-                    <i class="fas fa-search text-gray-400 text-lg"></i>
+            
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">SHIFT</label>
+                    <select id="dirShift" onchange="filterClasses('dirShift', 'dirClass'); renderStudents();" class="mobile-input bg-white force-uppercase">
+                        <option value="All">All Shifts</option>
+                        <option value="Morning">Morning</option>
+                        <option value="Evening">Evening</option>
+                    </select>
                 </div>
-                <input type="text" id="searchInput" oninput="renderStudents()" placeholder="SEARCH BY NAME OR PHONE..." class="mobile-input force-uppercase shadow-sm w-full" style="padding-left: 3.2rem;">
+                <div>
+                    <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">CLASS</label>
+                    <select id="dirClass" onchange="renderStudents()" class="mobile-input bg-white force-uppercase">
+                        <option value="All">All Classes</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="relative mb-6">
+                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <i class="fas fa-search text-gray-400 text-base"></i>
+                </div>
+                <input type="text" id="searchInput" oninput="renderStudents()" placeholder="SEARCH BY NAME OR PHONE..." class="mobile-input bg-white force-uppercase shadow-sm" style="padding-left: 50px !important;">
             </div>
             <div id="students-list" class="space-y-4"></div>
         </section>
 
         <section id="defaulters" class="view-section">
-            <div class="flex justify-between items-end mb-6 px-1">
+            <div class="flex justify-between items-center mb-6 px-1">
                 <div>
-                    <h2 class="text-2xl font-black text-red-600 tracking-tight">Pending Dues</h2>
-                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">>30 DAYS UNPAID</p>
+                    <div class="flex items-center space-x-2">
+                        <h2 class="text-2xl font-black text-red-600 tracking-tight">Pending Dues</h2>
+                        <div class="relative inline-flex items-center">
+                            <select id="defaultersShift" onchange="renderDefaulters()" class="bg-red-50 text-red-600 border border-red-200 text-[10px] font-black uppercase rounded-xl pl-2.5 pr-6 py-1 appearance-none shadow-sm focus:outline-none focus:ring-1 focus:ring-red-400 cursor-pointer">
+                                <option value="All">All</option>
+                                <option value="Morning">Morning</option>
+                                <option value="Evening">Evening</option>
+                            </select>
+                            <i class="fas fa-chevron-down absolute right-2 text-[8px] text-red-400 pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <p id="defaulters-subtitle" class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">&gt;&gt;30 DAYS UNPAID</p>
                 </div>
-                <div class="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600"><i class="fas fa-exclamation-triangle text-xl"></i></div>
+                <div class="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shrink-0"><i class="fas fa-exclamation-triangle text-xl"></i></div>
             </div>
             <div id="defaulters-list" class="space-y-4"></div>
         </section>
@@ -238,6 +287,19 @@
                             <div id="feeStudentList" class="hidden absolute top-full left-0 right-0 bg-white shadow-2xl border border-gray-100 rounded-xl mt-1 z-50 max-h-48 overflow-y-auto p-2"></div>
                             <input type="hidden" id="feeStudentId" required>
                         </div>
+                    </div>
+
+                    <!-- SMART PENDING MONTHS SELECTOR -->
+                    <div id="feePendingMonthsBox" class="hidden p-3.5 bg-indigo-50/80 border border-indigo-100 rounded-2xl transition-all shadow-sm">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[9px] font-black text-indigo-900 uppercase tracking-wider">
+                                <i class="fas fa-calendar-alt mr-1 text-indigo-600"></i> Select Months to Pay:
+                            </span>
+                            <span id="feePendingTotalBadge" class="text-[9px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200">
+                                Due: ₹0
+                            </span>
+                        </div>
+                        <div id="feePendingMonthsList" class="flex flex-wrap gap-2"></div>
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -284,7 +346,6 @@
                     <h2 class="text-2xl font-black text-gray-800 tracking-tight">Configuration</h2>
                     <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">Manage System Settings</p>
                 </div>
-                
                 <div class="flex items-center space-x-3">
                     <button onclick="toggleTheme()" class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 active:scale-90 transition shadow-inner">
                         <i id="theme-icon" class="fas fa-moon text-sm"></i>
@@ -297,19 +358,26 @@
                     </div>
                 </div>
             </div>
-            
-            <form id="settingsForm" onsubmit="saveSettings(event)">
-                <div class="glass-panel rounded-32 p-6 mb-6">
-                    <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-                        <h3 class="text-10 font-black text-indigo-600 tracking-widest uppercase"><i class="fas fa-coins mr-1.5"></i> Class Fees</h3>
-                        <button type="button" onclick="toggleClsLock()" class="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner">
-                            <i id="cls-lock-icon" class="fas fa-lock text-xs"></i>
-                        </button>
+
+            <!-- MAIN SETTINGS MENU -->
+            <div id="settingsMainMenu" class="space-y-4">
+                <button onclick="openShiftSettings('Morning')" class="w-full glass-panel rounded-32 p-6 flex justify-between items-center active:scale-95 transition-transform">
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center text-xl mr-4"><i class="fas fa-sun"></i></div>
+                        <div class="text-left"><h3 class="text-sm font-black text-gray-800 uppercase tracking-widest">Morning Shift</h3><p class="text-[10px] text-gray-400 font-bold uppercase mt-1">Manage Classes & Fees</p></div>
                     </div>
-                    <div id="dynamicClassesBox" class="space-y-4"></div>
-                    <button type="button" onclick="addNewClassInput()" id="btn-add-cls" disabled class="w-full bg-indigo-50 text-indigo-600 py-3 rounded-xl font-black text-xs mt-4 uppercase disabled:hidden transition-all"><i class="fas fa-plus mr-2"></i> ADD NEW CLASS TIER</button>
-                </div>
+                    <i class="fas fa-chevron-right text-gray-300"></i>
+                </button>
                 
+                <button onclick="openShiftSettings('Evening')" class="w-full glass-panel rounded-32 p-6 flex justify-between items-center active:scale-95 transition-transform">
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center text-xl mr-4"><i class="fas fa-moon"></i></div>
+                        <div class="text-left"><h3 class="text-sm font-black text-gray-800 uppercase tracking-widest">Evening Shift</h3><p class="text-[10px] text-gray-400 font-bold uppercase mt-1">Manage Classes & Fees</p></div>
+                    </div>
+                    <i class="fas fa-chevron-right text-gray-300"></i>
+                </button>
+
+                <!-- WHATSAPP SETTINGS (Always visible on main menu) -->
                 <div class="glass-panel rounded-32 p-6">
                     <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
                         <h3 class="text-10 font-black text-green-600 tracking-widest uppercase"><i class="fab fa-whatsapp mr-1.5"></i> WhatsApp API config</h3>
@@ -327,9 +395,45 @@
                             <input type="text" id="waToken" class="mobile-input wa-setting" placeholder="e.g. abc123def456" disabled>
                         </div>
                     </div>
-                    <button type="submit" id="btn-save-set" disabled class="w-full bg-gray-900 text-white py-5 rounded-2xl font-black mt-6 disabled:opacity-30 transition-all text-xs tracking-widest uppercase shadow-lg active:scale-95">UPDATE ALL SETTINGS</button>
+                                        <button type="button" onclick="saveWaSettings()" id="btn-save-wa" disabled class="w-full bg-green-600 text-white py-4 rounded-2xl font-black mt-5 disabled:opacity-30 transition-all text-[10px] tracking-widest uppercase shadow-lg active:scale-95">Save WhatsApp Settings</button>
+                    
+                    <!-- TEST WHATSAPP MESSAGE (Instant Delivery Check) -->
+                    <div class="mt-5 pt-4 border-t border-gray-100">
+                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Test WhatsApp Connection</label>
+                        <div class="flex space-x-2">
+                            <input type="tel" id="waTestPhone" class="mobile-input flex-1 text-xs" placeholder="10-DIGIT MOBILE NUMBER" maxlength="10">
+                            <button type="button" onclick="testWaSend()" id="btn-test-wa" class="bg-indigo-600 text-white px-4 py-3 rounded-2xl font-black text-[9px] uppercase tracking-widest active:scale-95 transition whitespace-nowrap shadow-md">
+                                <i class="fas fa-paper-plane mr-1"></i> Test Send
+                            </button>
+                        </div>
+                        <p id="waTestResult" class="text-[9px] font-bold mt-2 hidden"></p>
+                    </div>
                 </div>
-            </form>
+            </div>
+
+            <!-- SUB-MENU FOR CLASSES -->
+            <div id="settingsSubMenu" class="hidden">
+                <div class="flex items-center mb-4 space-x-3">
+                    <button onclick="closeShiftSettings()" class="w-10 h-10 bg-gray-100 text-gray-500 rounded-full flex items-center justify-center active:scale-90 transition"><i class="fas fa-arrow-left"></i></button>
+                    <h3 id="subMenuTitle" class="text-sm font-black text-gray-800 uppercase tracking-widest">Shift</h3>
+                </div>
+                
+                <form onsubmit="saveShiftSettings(event)">
+                    <input type="hidden" id="currentShiftTarget">
+                    <div class="glass-panel rounded-32 p-6 mb-6">
+                        <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                            <h3 class="text-10 font-black text-indigo-600 tracking-widest uppercase"><i class="fas fa-coins mr-1.5"></i> Class Fees</h3>
+                            <button type="button" onclick="toggleClsLock()" class="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner">
+                                <i id="cls-lock-icon" class="fas fa-lock text-xs"></i>
+                            </button>
+                        </div>
+                        <div id="dynamicClassesBox" class="space-y-4"></div>
+                        <button type="button" onclick="addNewClassInput()" id="btn-add-cls" disabled class="w-full bg-indigo-50 text-indigo-600 py-3 rounded-xl font-black text-xs mt-4 uppercase disabled:hidden transition-all"><i class="fas fa-plus mr-2"></i> ADD NEW CLASS</button>
+                        
+                        <button type="submit" id="btn-save-cls" disabled class="w-full bg-gray-900 text-white py-4 rounded-2xl font-black mt-6 disabled:opacity-30 transition-all text-[10px] tracking-widest uppercase shadow-lg active:scale-95">SAVE CLASSES</button>
+                    </div>
+                </form>
+            </div>
         </section>
     </main>
 
@@ -366,11 +470,13 @@
             <div class="drag-handle"></div>
             
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-black text-gray-800 uppercase" id="modalTitle">Registration</h3>
-                <div class="flex items-center space-x-3">
-                    <button type="button" id="modalLockBtn" onclick="toggleModalLock()" class="hidden w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 active:scale-90 shadow-sm transition"><i id="modalLockIcon" class="fas fa-lock"></i></button>
-                    <button type="button" onclick="closeModal()" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 active:scale-90"><i class="fas fa-times"></i></button>
+                <div class="flex items-center space-x-2.5">
+                    <h3 class="text-xl font-black text-gray-800 uppercase" id="modalTitle">Registration</h3>
+                    <button type="button" id="modalLockBtn" onclick="toggleModalLock()" class="hidden w-8 h-8 bg-red-50 text-red-500 rounded-full flex items-center justify-center active:scale-90 shadow-sm transition border border-red-200" title="Lock / Unlock editing">
+                        <i id="modalLockIcon" class="fas fa-lock text-xs"></i>
+                    </button>
                 </div>
+                <button type="button" onclick="closeModal()" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 active:scale-90"><i class="fas fa-times"></i></button>
             </div>
 
             <div id="aiStudentSummaryCard" class="hidden bg-purple-50 border border-purple-100 rounded-2xl p-3 mb-4">
@@ -387,17 +493,25 @@
                     <input type="text" id="stuName" required class="mobile-input force-uppercase" placeholder="STUDENT NAME" oninput="autoGuessGender()">
                 </div>
                 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-3 gap-2">
                     <div>
                         <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Gender</label>
-                        <select id="stuGender" required class="mobile-input bg-white force-uppercase">
-                            <option value="" disabled selected>-- SELECT --</option>
+                        <select id="stuGender" required class="mobile-input bg-white force-uppercase text-xs p-1">
+                            <option value="" disabled selected>- SELECT -</option>
                             <option value="Male">MALE</option><option value="Female">FEMALE</option>
                         </select>
                     </div>
                     <div>
+                        <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Shift</label>
+                        <select id="stuShift" required onchange="filterClasses('stuShift', 'stuClass')" class="mobile-input bg-white force-uppercase text-xs p-1">
+                            <option value="" disabled selected>- SHIFT -</option>
+                            <option value="Morning">MORNING</option>
+                            <option value="Evening">EVENING</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Class</label>
-                        <select id="stuClass" required onchange="autoFillSetupFee()" class="mobile-input bg-white"><option value="">-- SELECT --</option></select>
+                        <select id="stuClass" required onchange="autoFillSetupFee()" class="mobile-input bg-white text-xs p-1"><option value="">- CLASS -</option></select>
                     </div>
                 </div>
                 
@@ -413,7 +527,14 @@
                 
                 <div class="grid grid-cols-2 gap-3">
                     <div><label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Fee (₹)</label><input type="number" inputmode="numeric" id="stuFee" required class="mobile-input border-indigo-200 bg-indigo-50 text-indigo-700 text-lg"></div>
-                    <div><label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Join Date <span class="text-8 normal-case">(DD/MM/YYYY)</span></label><input type="date" id="stuDate" required class="mobile-input text-11 p-[13px]"></div>
+                    <div><label class="block text-10 font-black text-gray-400 uppercase ml-1 mb-1">Join Date <span class="text-8 normal-case">(DD/MM/YYYY)</span></label><input type="date" id="stuDate" required onchange="checkPastDate()" class="mobile-input text-11 p-[13px]"></div>
+                </div>
+
+                <div id="pastMonthsContainer" class="hidden bg-purple-50 p-3 rounded-xl border border-purple-100">
+                    <label class="block text-[10px] font-black text-purple-600 uppercase ml-1 mb-2">Already Paid Fees (Past Months)</label>
+                    <div id="pastMonthsCheckboxes" class="grid grid-cols-3 gap-2">
+                        <!-- Checkboxes will be injected here dynamically -->
+                    </div>
                 </div>
                 
                 <div id="deleteBox" class="hidden mt-6 pt-5 border-t border-gray-100">
@@ -428,6 +549,7 @@
         </div>
     </div>
 
-    <script src="./script.js"></script>
+    <script src="./names.js"></script>
+    <script src="./script.js?v=3.0"></script>
 </body>
 </html>

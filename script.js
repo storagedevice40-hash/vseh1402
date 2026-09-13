@@ -1,113 +1,700 @@
-// ==========================================
-        // YAHAN APNA NAYA WEB APP URL DAALO
-        // ==========================================
-        const API_URL = 'https://script.google.com/macros/s/AKfycbydSEiXiVsLEzAg75t_hZMOcR4-VoUCokYRPO-ceXmQmH2mT0t_XepxdApN6z3kUXHdOA/exec';
+// ==========================================================================
+// VSEH PRO - SUPABASE DIRECT CLOUD DATABASE ENGINE (ZERO LOCALSTORAGE CACHE)
+// ==========================================================================
+const SUPABASE_URL = 'https://elytgxvdnlasaricgybo.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVseXRneHZkbmxhc2FyaWNneWJvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyMjM4OTcsImV4cCI6MjEwNDc5OTg5N30.ua5uno1m3972457XkHChtqvhe75WDok3h-q_-7J1vYA';
 
-        var appData = { students: [], payments: [], attendance: [], feeSettings: {}, waSettings: { instanceId: '', token: '' }, paidCount: 0, autopilotEnabled: true };
-        
-        function getTargetFeeMonth() {
-            let now = new Date();
-            if (now.getDate() <= 10) {
-                now.setMonth(now.getMonth() - 1);
-            }
-            return now.toLocaleString('default', { month: 'long' });
-        }
-        
-        var currentMonthName = new Date().toLocaleString('default', { month: 'long' });
-        var targetFeeMonth = getTargetFeeMonth();
-        var currentMode = ''; 
-        var currentStudentExpectedFee = 0; 
-        var setLocked = true;
-        var clsLocked = true; 
-        var waLocked = true; 
-        var delLocked = true;
-        var modalLocked = false; 
-        var isRevenueHidden = true;
+var appData = { students: [], payments: [], attendance: [], feeSettings: {}, waSettings: { instanceId: 'instance175857', token: '7yqm7bhojwpovbu4' }, recentDismissedIds: [], paidCount: 0, autopilotEnabled: true };
 
-        // FIXED API CALL ENGINE (No CORS blocks anymore)
-        async function gasApi(action, payload = null) {
-            try {
-                let options = { method: "GET" };
-                if (payload) {
-                    options = {
-                        method: "POST",
-                        headers: { "Content-Type": "text/plain;charset=utf-8" },
-                        body: JSON.stringify({ action: action, data: payload })
-                    };
-                }
-                let url = API_URL + "?action=" + action;
-                const response = await fetch(url, options);
-                return await response.json();
-            } catch(e) { console.error("API Error:", e); return null; }
-        }
+function getTargetFeeMonth() {
+    let now = new Date();
+    if (now.getDate() <= 10) {
+        now.setMonth(now.getMonth() - 1);
+    }
+    return now.toLocaleString('default', { month: 'long' });
+}
 
-        document.addEventListener('DOMContentLoaded', function() {
-            setInterval(updateClock, 1000); updateClock();
-            document.getElementById('feeMonth').value = currentMonthName;
-            document.getElementById('attDate').valueAsDate = new Date();
-            document.getElementById('feeDate').valueAsDate = new Date();
-            document.getElementById('stuDate').valueAsDate = new Date();
 
-            const cachedData = localStorage.getItem('vsehData');
-            if(cachedData) {
-                appData = JSON.parse(cachedData);
-                document.getElementById('globalLoader').style.display = 'none';
-                syncUIPanels();
-            }
+// ==========================================================================
+// DYNAMIC 30-DAY BILLING CYCLE & MULTI-MONTH FEE CALCULATION ENGINE
+// ==========================================================================
+const ALL_MONTHS_LIST = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-            gasApi('getAppData').then(function(res) {
-                clearTimeout(window.loadTimer);
-                if(res && res.status === 'success') { 
-                    // Fix Attendance Grouping
-                    if (res.attendance && Array.isArray(res.attendance)) {
-                        let groupedAtt = {};
-                        res.attendance.forEach(record => {
-                            let cleanDate = record.date;
-                            try {
-                                let d = new Date(record.date);
-                                if (!isNaN(d)) {
-                                    let y = d.getFullYear();
-                                    let m = ("0" + (d.getMonth() + 1)).slice(-2);
-                                    let day = ("0" + d.getDate()).slice(-2);
-                                    cleanDate = `${y}-${m}-${day}`;
-                                }
-                            } catch(e) {}
-                            
-                            let key = cleanDate + '|' + record.className;
-                            if (!groupedAtt[key]) {
-                                groupedAtt[key] = { date: cleanDate, class: record.className, records: {} };
-                            }
-                            groupedAtt[key].records[record.studentName] = record.status;
-                        });
-                        res.attendance = Object.values(groupedAtt);
-                    }
+function calculateStudentDues(student, payments) {
+    if (!student) {
+        return { pendingMonths: [], pendingCount: 0, totalPendingAmount: 0, isOverdue: false, formattedPendingText: '', nextDueDate: '' };
+    }
 
-                    appData = Object.assign(appData, res);
-                    localStorage.setItem('vsehData', JSON.stringify(appData));
-                    if(!cachedData) document.getElementById('globalLoader').style.display = 'none';
-                    syncUIPanels();
-                } else if(!cachedData) {
-                    // Fallback empty UI init if server fails
-                    document.getElementById('globalLoader').style.display = 'none';
-                    syncUIPanels();
-                }
-            });
-            
-            // Dummy initialization if no data loads
-            window.loadTimer = setTimeout(() => {
-                document.getElementById('globalLoader').style.display = 'none';
-                syncUIPanels();
-            }, 3000);
+    let rawJoin = student.joinDate || student.date;
+    let joinDate = rawJoin ? new Date(rawJoin) : new Date();
+    if (isNaN(joinDate.getTime())) joinDate = new Date();
+
+    let now = new Date();
+    let studentFee = Number(student.fee) || 500;
+    let sName = (student.name || '').trim().toUpperCase();
+    let sClass = (student.class || '').trim();
+
+    // Find all payments made by this student
+    let studentPayments = (payments || []).filter(p => {
+        let matchName = (p.studentName || '').trim().toUpperCase() === sName;
+        let matchClass = !sClass || !p.className || (p.className || '').trim() === sClass;
+        let matchId = student.id && p.studentId && (p.studentId === student.id);
+        return matchId || (matchName && matchClass);
+    });
+
+    // Build set of paid months (lowercase for reliable matching)
+    let paidMonthsSet = new Set();
+    studentPayments.forEach(p => {
+        let pMonth = (p.month || '').trim();
+        let splitMonths = pMonth.split(/[,&+]|and/i);
+        splitMonths.forEach(m => {
+            let clean = m.trim().toLowerCase();
+            if (clean) paidMonthsSet.add(clean);
         });
+    });
 
-        function syncUIPanels() {
-            initSettingsUI(); 
-            updateDashboard(); 
-            renderStudents(); 
-            renderDefaulters();
-            renderPaidStudents();
-            runAiBriefingModels();
+    if (student.pastPayments) {
+        try {
+            let past = typeof student.pastPayments === 'string' ? JSON.parse(student.pastPayments) : student.pastPayments;
+            if (Array.isArray(past)) {
+                past.forEach(p => {
+                    if (p.month) paidMonthsSet.add(p.month.trim().toLowerCase());
+                });
+            }
+        } catch(e) {}
+    }
+
+    // Step cycle by cycle (month by month) from joinDate
+    let pendingMonths = [];
+    let allDueMonths = [];
+    let joinDay = joinDate.getDate();
+
+    let curYear = joinDate.getFullYear();
+    let curMonth = joinDate.getMonth();
+
+    let targetYear = now.getFullYear();
+    let targetMonth = now.getMonth();
+    let todayDay = now.getDate();
+
+    while (curYear < targetYear || (curYear === targetYear && curMonth <= targetMonth)) {
+        let mName = ALL_MONTHS_LIST[curMonth];
+        let cycleDueDate = new Date(curYear, curMonth, joinDay);
+        
+        // Cycle is due if current date has reached or passed cycleDueDate
+        let isCycleDue = (now >= cycleDueDate);
+
+        if (isCycleDue) {
+            allDueMonths.push(mName);
+            if (!paidMonthsSet.has(mName.toLowerCase())) {
+                pendingMonths.push(mName);
+            }
         }
+
+        curMonth++;
+        if (curMonth > 11) {
+            curMonth = 0;
+            curYear++;
+        }
+    }
+
+    // Compute next due date string
+    let nextDueYear = targetYear;
+    let nextDueMonth = targetMonth;
+    if (todayDay >= joinDay) {
+        nextDueMonth++;
+        if (nextDueMonth > 11) {
+            nextDueMonth = 0;
+            nextDueYear++;
+        }
+    }
+    let nextDueDateStr = `${joinDay} ${ALL_MONTHS_LIST[nextDueMonth]} ${nextDueYear}`;
+
+    // Format human-readable pending months string
+    let formattedPendingText = "";
+    if (pendingMonths.length === 1) {
+        formattedPendingText = pendingMonths[0].toUpperCase();
+    } else if (pendingMonths.length === 2) {
+        formattedPendingText = `${pendingMonths[0].toUpperCase()} AND ${pendingMonths[1].toUpperCase()}`;
+    } else if (pendingMonths.length > 2) {
+        let allButLast = pendingMonths.slice(0, -1).map(m => m.toUpperCase()).join(", ");
+        formattedPendingText = `${allButLast} AND ${pendingMonths[pendingMonths.length - 1].toUpperCase()}`;
+    }
+
+    let totalPendingAmount = pendingMonths.length * studentFee;
+
+    return {
+        pendingMonths,
+        pendingCount: pendingMonths.length,
+        totalPendingAmount,
+        isOverdue: pendingMonths.length > 0,
+        allDueMonths,
+        nextDueDate: nextDueDateStr,
+        joinDay: joinDay,
+        formattedPendingText
+    };
+}
+
+var currentMonthName = new Date().toLocaleString('default', { month: 'long' });
+var targetFeeMonth = getTargetFeeMonth();
+var currentMode = ''; 
+var currentStudentExpectedFee = 0; 
+var setLocked = true;
+var clsLocked = true; 
+var waLocked = true; 
+var delLocked = true;
+var modalLocked = false; 
+var isRevenueHidden = true;
+var recentLocked = true;
+
+// DIRECT SUPABASE POSTGREST CLIENT HELPER
+async function supabaseFetch(table, query = '', method = 'GET', body = null, extraHeaders = {}) {
+    const url = `${SUPABASE_URL}/rest/v1/${table}${query}`;
+    const headers = {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        ...extraHeaders
+    };
+    const options = { method, headers };
+    if (body) options.body = JSON.stringify(body);
+    
+    try {
+        const res = await fetch(url, options);
+        if (res.status === 204) return { success: true };
+        const text = await res.text();
+        if (!text || text.trim() === '') return { success: true };
+        try { return JSON.parse(text); } catch(err) { return { success: true }; }
+    } catch(e) {
+        console.error(`Supabase error on ${table}:`, e);
+        return null;
+    }
+}
+
+// SILENT BACKGROUND GOOGLE SHEET BACKUP MIRROR (NON-BLOCKING / ZERO-GLITCH)
+const GOOGLE_SHEET_BACKUP_URL = 'https://script.google.com/macros/s/AKfycbzEhf8sVHoFZekwbcdGwZZiwBpOkulBeY5hyCA777QGM6eS9OSaS8HtAWPx_h3kmO-T/exec';
+
+function mirrorToGoogleSheet(action, data) {
+    if (!GOOGLE_SHEET_BACKUP_URL || !action) return;
+    try {
+        setTimeout(() => {
+            fetch(GOOGLE_SHEET_BACKUP_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: action, data: data })
+            }).catch(e => {});
+        }, 150);
+    } catch(err) {}
+}
+
+// FULL DIRECT API DISPATCHER (ZERO LOCALSTORAGE - 100% REALTIME LIVE DATA)
+async function gasApi(action, payload = null) {
+    try {
+        if (action === 'getAppData') {
+            const [rawStudents, rawPayments, rawAttendance, rawClassFees, rawSettings] = await Promise.all([
+                supabaseFetch('students', '?select=*&order=created_at.desc'),
+                supabaseFetch('payments', '?select=*&order=created_at.desc'),
+                supabaseFetch('attendance', '?select=*&order=created_at.desc'),
+                supabaseFetch('class_fees', '?select=*'),
+                supabaseFetch('settings', '?select=*')
+            ]);
+
+            // Students mapping
+            const students = Array.isArray(rawStudents) ? rawStudents.map(r => ({
+                id: String(r.id || ''),
+                name: String(r.name || '').toUpperCase(),
+                gender: String(r.gender || 'Male'),
+                class: String(r.class || ''),
+                phone: String(r.phone || ''),
+                fee: String(r.fee || '0'),
+                date: String(r.join_date || ''),
+                joinDate: String(r.join_date || ''),
+                shift: String(r.shift || 'Morning')
+            })) : [];
+
+            // Payments & Paid Count
+            const currentMonth = new Date().toLocaleString('default', { month: 'long' });
+            const currentYear = new Date().getFullYear();
+            let paidCount = 0;
+
+            const payments = Array.isArray(rawPayments) ? rawPayments.map(r => {
+                const pMonth = String(r.month || '');
+                const pDateStr = String(r.date || '');
+                const pAmount = r.amount || 0;
+
+                const pMonthsList = pMonth.split(/[,&+]| and /i).map(m => m.trim().toLowerCase());
+                if (pMonthsList.includes(currentMonth.toLowerCase())) {
+                    const d = new Date(pDateStr);
+                    if (!isNaN(d.getTime()) && d.getFullYear() === currentYear) {
+                        paidCount++;
+                    }
+                }
+
+                return {
+                    id: String(r.id || ''),
+                    studentId: String(r.student_id || ''),
+                    studentName: String(r.student_name || ''),
+                    className: String(r.class_name || ''),
+                    phone: String(r.phone || ''),
+                    amount: pAmount,
+                    month: pMonth,
+                    date: pDateStr,
+                    mode: String(r.mode || 'CASH')
+                };
+            }) : [];
+
+            // Attendance Grouping
+            let attendance = [];
+            if (Array.isArray(rawAttendance)) {
+                let groupedAtt = {};
+                rawAttendance.forEach(record => {
+                    let cleanDate = record.date;
+                    let key = cleanDate + '|' + (record.class || '');
+                    if (!groupedAtt[key]) {
+                        groupedAtt[key] = { date: cleanDate, class: record.class, records: {} };
+                    }
+                    groupedAtt[key].records[record.student_name] = record.status;
+                });
+                attendance = Object.values(groupedAtt);
+            }
+
+            // Class Fees
+            const feeSettings = {};
+            if (Array.isArray(rawClassFees)) {
+                rawClassFees.forEach(r => {
+                    if (r.class_name) feeSettings[String(r.class_name)] = String(r.fee_amount || '0');
+                });
+            }
+
+            // WhatsApp Settings & Recent Dismissed IDs (Dynamic from DB)
+            let waSettings = { instanceId: 'instance175857', token: '7yqm7bhojwpovbu4' };
+            let recentDismissedIds = [];
+            if (Array.isArray(rawSettings)) {
+                const waRow = rawSettings.find(r => r.key === 'waSettings');
+                if (waRow && waRow.value) {
+                    try {
+                        const parsed = typeof waRow.value === 'string' ? JSON.parse(waRow.value) : waRow.value;
+                        if (parsed.instanceId) waSettings.instanceId = parsed.instanceId;
+                        if (parsed.token) waSettings.token = parsed.token;
+                    } catch(e) {}
+                }
+                const disRow = rawSettings.find(r => r.key === 'recentDismissedIds');
+                if (disRow && disRow.value) {
+                    try {
+                        recentDismissedIds = typeof disRow.value === 'string' ? JSON.parse(disRow.value) : disRow.value;
+                    } catch(e) {}
+                }
+                const remRow = rawSettings.find(r => r.key === 'autoRemindersLog');
+                var autoRemindersLog = {};
+                if (remRow && remRow.value) {
+                    try {
+                        autoRemindersLog = typeof remRow.value === 'string' ? JSON.parse(remRow.value) : remRow.value;
+                    } catch(e) {}
+                }
+            }
+
+            return {
+                status: 'success',
+                students,
+                payments,
+                attendance,
+                feeSettings,
+                waSettings,
+                recentDismissedIds: Array.isArray(recentDismissedIds) ? recentDismissedIds : [],
+                autoRemindersLog: autoRemindersLog && typeof autoRemindersLog === 'object' ? autoRemindersLog : {},
+                paidCount
+            };
+        }
+
+        if (action === 'saveStudent') {
+            const data = payload;
+            const studentPayload = {
+                id: data.id,
+                name: (data.name || '').toUpperCase(),
+                gender: data.gender || 'Male',
+                class: data.class || '',
+                phone: data.phone || '',
+                fee: String(data.fee || '0'),
+                join_date: data.joinDate || data.date || '',
+                shift: data.shift || 'Morning'
+            };
+
+            await supabaseFetch('students', '', 'POST', [studentPayload], {
+                'Prefer': 'resolution=merge-duplicates'
+            });
+
+            if (data.pastPayments) {
+                try {
+                    const past = typeof data.pastPayments === 'string' ? JSON.parse(data.pastPayments) : data.pastPayments;
+                    if (Array.isArray(past) && past.length > 0) {
+                        const payRecords = past.map(item => ({
+                            id: "TXN" + Date.now() + Math.floor(Math.random() * 1000),
+                            student_id: data.id,
+                            student_name: data.name,
+                            class_name: data.class,
+                            phone: data.phone || '',
+                            amount: Number(item.amount || data.fee || 0),
+                            month: item.month || '',
+                            date: item.date || data.joinDate || '',
+                            mode: item.mode || "PRE-PAID"
+                        }));
+                        await supabaseFetch('payments', '', 'POST', payRecords);
+                    }
+                } catch(e) {}
+            }
+
+            mirrorToGoogleSheet('saveStudent', data);
+            return await gasApi('getAppData');
+        }
+
+        if (action === 'deleteStudent') {
+            const studentId = payload.id;
+            const res = await supabaseFetch('students', `?id=eq.${studentId}&select=*`);
+            if (Array.isArray(res) && res.length > 0) {
+                const s = res[0];
+                await supabaseFetch('archived_students', '', 'POST', [{
+                    id: s.id,
+                    name: s.name,
+                    gender: s.gender,
+                    class: s.class,
+                    phone: s.phone,
+                    fee: s.fee,
+                    join_date: s.join_date,
+                    shift: s.shift,
+                    deleted_at: new Date().toISOString()
+                }]);
+                await supabaseFetch('students', `?id=eq.${studentId}`, 'DELETE');
+            }
+            mirrorToGoogleSheet('deleteStudent', payload);
+            return await gasApi('getAppData');
+        }
+
+        if (action === 'clearRecentPayments') {
+            const ids = (payload && payload.ids) ? payload.ids : [];
+            let currentDismissed = appData.recentDismissedIds || [];
+            let merged = Array.from(new Set([...currentDismissed, ...ids]));
+            await supabaseFetch('settings', '', 'POST', [{
+                key: 'recentDismissedIds',
+                value: JSON.stringify(merged)
+            }], {
+                'Prefer': 'resolution=merge-duplicates'
+            });
+            appData.recentDismissedIds = merged;
+            return await gasApi('getAppData');
+        }
+
+        if (action === 'savePayment') {
+            const data = payload;
+            const row = {
+                id: data.id || ('TXN' + Date.now()),
+                student_id: data.studentId || '',
+                student_name: data.studentName || '',
+                class_name: data.className || data.class || '',
+                phone: data.phone || '',
+                amount: Number(data.amount) || 0,
+                month: data.month || '',
+                date: data.date || '',
+                mode: data.mode || 'CASH'
+            };
+            await supabaseFetch('payments', '', 'POST', [row], {
+                'Prefer': 'resolution=merge-duplicates'
+            });
+            mirrorToGoogleSheet('savePayment', data);
+            return await gasApi('getAppData');
+        }
+
+        if (action === 'saveAttendanceBatch') {
+            const records = payload;
+            if (Array.isArray(records) && records.length > 0) {
+                const batch = records.map(rec => ({
+                    id: rec.id || ('ATT' + Date.now() + Math.floor(Math.random() * 1000)),
+                    student_id: rec.studentId || '',
+                    student_name: rec.studentName || '',
+                    class: rec.class || '',
+                    date: rec.date || '',
+                    month: rec.month || '',
+                    status: rec.status || 'Present'
+                }));
+                await supabaseFetch('attendance', '', 'POST', batch);
+            }
+            mirrorToGoogleSheet('saveAttendanceBatch', records);
+            return await gasApi('getAppData');
+        }
+
+        if (action === 'saveAllSettings') {
+            const data = payload;
+            if (data.feeSettings && typeof data.feeSettings === 'object') {
+                const feeRows = [];
+                for (const className in data.feeSettings) {
+                    if (data.feeSettings.hasOwnProperty(className) && className !== 'waSettings') {
+                        feeRows.push({
+                            class_name: className,
+                            fee_amount: String(data.feeSettings[className])
+                        });
+                    }
+                }
+                if (feeRows.length > 0) {
+                    await supabaseFetch('class_fees', '', 'POST', feeRows, {
+                        'Prefer': 'resolution=merge-duplicates'
+                    });
+                }
+            }
+            if (data.waSettings) {
+                const valStr = JSON.stringify(data.waSettings);
+                await supabaseFetch('settings', '', 'POST', [{
+                    key: 'waSettings',
+                    value: valStr
+                }], {
+                    'Prefer': 'resolution=merge-duplicates'
+                });
+            }
+            mirrorToGoogleSheet('saveAllSettings', data);
+            return await gasApi('getAppData');
+        }
+
+        if (action === 'stealthWhatsAppTrigger') {
+            const phone = payload.phone;
+            const message = payload.message;
+            let cleanPhone = String(phone || '').replace(/\D/g, '');
+            if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+            if (!cleanPhone.startsWith('+')) cleanPhone = '+' + cleanPhone;
+
+            let inst = (appData.waSettings && appData.waSettings.instanceId) ? appData.waSettings.instanceId : 'instance175857';
+            let tok = (appData.waSettings && appData.waSettings.token) ? appData.waSettings.token : '7yqm7bhojwpovbu4';
+
+            // 1. Try Vercel Serverless Function Proxy (bypasses Cloudflare)
+            try {
+                const res = await fetch('/api?action=stealthWhatsAppTrigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'stealthWhatsAppTrigger',
+                        data: { phone: cleanPhone, message: message, instanceId: inst, token: tok }
+                    })
+                });
+                if (res.ok) {
+                    const resData = await res.json();
+                    if (resData && resData.status === 'success') return resData;
+                }
+            } catch(e) {
+                console.warn("Vercel proxy failed, trying fallback:", e);
+            }
+
+            // 2. Direct UltraMsg Cloud POST
+            try {
+                const apiUrl = `https://api.ultramsg.com/${inst}/messages/chat`;
+                const resp = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ token: tok, to: cleanPhone, body: message })
+                });
+                const text = await resp.text();
+                return { status: 'success', message: 'Sent', apiResponse: text };
+            } catch(e) {
+                console.error("Direct UltraMsg error:", e);
+            }
+
+            // 3. Fallback to Apps Script web app proxy
+            try {
+                const gasUrl = 'https://script.google.com/macros/s/AKfycbzEhf8sVHoFZekwbcdGwZZiwBpOkulBeY5hyCA777QGM6eS9OSaS8HtAWPx_h3kmO-T/exec?action=stealthWhatsAppTrigger';
+                const resp = await fetch(gasUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'stealthWhatsAppTrigger', data: { phone: cleanPhone, message: message, instanceId: inst, token: tok } })
+                });
+                return await resp.json();
+            } catch(e) {
+                return { status: 'error', message: e.toString() };
+            }
+        }
+
+        if (action === 'processAiCommand') {
+            const userPrompt = payload.prompt || payload.command;
+            const contextData = payload.context || {};
+            let roster = "No data yet.";
+            if (contextData.students && contextData.students.length > 0) {
+                roster = contextData.students.map(s => `${s.name} (Class: ${s.class}, Fee: ${s.fee})`).join("\n");
+            }
+            const systemPrompt = `You are "Vijay Sir AI Assistant" for VSEH PRO.\nCurrent Date: ${new Date().toLocaleDateString('en-GB')}\nTotal Students: ${contextData.students ? contextData.students.length : 0}\nThis Month Paid Students: ${contextData.paidCount || 0}\n\nROSTER DATA:\n${roster}\n\nAnswer in simple Hindi + English mix. Keep responses concise and direct. Format beautifully with bolding.\nIf the user asks you to mark attendance (present or absent) for all students of a specific class, add this command block at the end: <CMD>MARK_ATTENDANCE|Class|Status</CMD>`;
+            const finalPrompt = systemPrompt + "\n\nUser Command: " + userPrompt;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyDgvMXsvNyliJCtqLTUK0Y_hLjC8i0LUVI`;
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: finalPrompt }] }] })
+            });
+            const resJson = await resp.json();
+            if (resJson.error) return { status: 'error', message: resJson.error.message };
+            const aiReply = resJson.candidates[0].content.parts[0].text.trim();
+            return { status: 'success', result: { intent: "TEXT_RESPONSE", message: aiReply } };
+        }
+
+        return { status: 'error', message: 'Unknown action' };
+    } catch(e) {
+        console.error("gasApi Error:", e);
+        return null;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    setInterval(updateClock, 1000); updateClock();
+    document.getElementById('feeMonth').value = currentMonthName;
+    document.getElementById('attDate').valueAsDate = new Date();
+    document.getElementById('feeDate').valueAsDate = new Date();
+    document.getElementById('stuDate').valueAsDate = new Date();
+
+    // PERMANENTLY PURGE OLD LOCALSTORAGE CACHE
+    try { localStorage.removeItem('vsehData'); } catch(e) {}
+
+    gasApi('getAppData').then(function(res) {
+        if(res && res.status === 'success') {
+            appData = Object.assign(appData, res);
+            document.getElementById('globalLoader').style.display = 'none';
+            syncUIPanels();
+        } else {
+            document.getElementById('globalLoader').style.display = 'none';
+            syncUIPanels();
+        }
+    }).catch(function(err) {
+        document.getElementById('globalLoader').style.display = 'none';
+        syncUIPanels();
+    });
+});
+
+
+// ==========================================================================
+// STRICT NEXT-DAY MORNING AUTOPILOT OVERDUE DISPATCH ENGINE
+// ==========================================================================
+// User Rules:
+// 1. Automatic reminder ONLY sent on the EXACT NEXT DAY after the due date (e.g. Due on 5th -> sent on 6th).
+// 2. ONLY sent in the MORNING window (8:00 AM to 12:00 PM).
+// 3. Sent EXACTLY ONCE per billing cycle per student. NEVER repeated on reload!
+// 4. On day + 2, day + 3, or any later date: NO AUTOMATIC REMINDERS!
+// 5. Subsequent reminders can ONLY be sent when user manually clicks "Remind" button.
+// ==========================================================================
+async function runAutopilotDueCheck() {
+    if (!appData.autopilotEnabled) return;
+
+    let now = new Date();
+    let currentHour = now.getHours();
+
+    // STRICT RULE 1: Morning Window ONLY (8:00 AM to 12:00 PM)
+    if (currentHour < 8 || currentHour >= 12) {
+        return;
+    }
+
+    // Load persistent log of sent reminders (localStorage + Supabase settings)
+    let localLog = {};
+    try {
+        let stored = localStorage.getItem('vseh_auto_reminders_log');
+        if (stored) localLog = JSON.parse(stored);
+    } catch(e) {}
+    
+    let dbLog = appData.autoRemindersLog || {};
+    let combinedLog = Object.assign({}, dbLog, localLog);
+
+    let alertedCount = 0;
+    let logUpdated = false;
+
+    for (let i = 0; i < (appData.students || []).length; i++) {
+        let s = appData.students[i];
+        if (!s || !s.phone) continue;
+
+        let dues = calculateStudentDues(s, appData.payments);
+        if (!dues.isOverdue || dues.pendingMonths.length === 0) continue;
+
+        // Parse student's join / due day
+        let rawJoin = s.joinDate || s.date;
+        if (!rawJoin) continue;
+        let joinDate = new Date(rawJoin);
+        if (isNaN(joinDate.getTime())) {
+            let p = rawJoin.split('/');
+            if (p.length === 3) joinDate = new Date(p[2], p[1] - 1, p[0]);
+        }
+        if (isNaN(joinDate.getTime())) continue;
+
+        let joinDay = joinDate.getDate();
+
+        // Check each pending month
+        for (let m = 0; m < dues.pendingMonths.length; m++) {
+            let pMonthName = dues.pendingMonths[m];
+            let pMonthIdx = ALL_MONTHS_LIST.findIndex(name => name.toLowerCase() === pMonthName.toLowerCase());
+            if (pMonthIdx < 0) continue;
+
+            let cycleYear = now.getFullYear();
+            if (now.getMonth() < pMonthIdx) {
+                cycleYear--;
+            }
+
+            // STRICT RULE 2: Must be the EXACT NEXT DAY after the due date (e.g. Due 5th -> Next Day 6th)
+            // "fees kaa date kee taak naa ayee toooh next day dalnaa haii usakee baad nahii dalnaa haii"
+            let nextDayDate = new Date(cycleYear, pMonthIdx, joinDay + 1);
+
+            let isExactNextDay = (
+                now.getFullYear() === nextDayDate.getFullYear() &&
+                now.getMonth() === nextDayDate.getMonth() &&
+                now.getDate() === nextDayDate.getDate()
+            );
+
+            if (!isExactNextDay) {
+                // Not the next day -> Do NOT send automatically!
+                continue;
+            }
+
+            // STRICT RULE 3: Send EXACTLY ONCE for this cycle. Check persistent log.
+            let logKey = (s.id || s.name).trim().toUpperCase() + '_' + pMonthName.toUpperCase() + '_' + cycleYear;
+
+            if (combinedLog[logKey]) {
+                // Already sent! Skip!
+                continue;
+            }
+
+            // Mark as sent immediately to prevent any duplicate/reload firing
+            combinedLog[logKey] = now.toISOString();
+            logUpdated = true;
+
+            await sendSoftReminder(i, true);
+            alertedCount++;
+
+            // Only 1 reminder per student per cycle
+            break;
+        }
+    }
+
+    if (logUpdated) {
+        try {
+            localStorage.setItem('vseh_auto_reminders_log', JSON.stringify(combinedLog));
+        } catch(e) {}
+
+        appData.autoRemindersLog = combinedLog;
+
+        try {
+            await supabaseFetch('settings', '', 'POST', [{
+                key: 'autoRemindersLog',
+                value: JSON.stringify(combinedLog)
+            }], {
+                'Prefer': 'resolution=merge-duplicates'
+            });
+        } catch(e) {}
+    }
+
+    if (alertedCount > 0) {
+        showToast(`AUTOMATIC: ${alertedCount} NEXT-DAY REMINDER SENT 🌟`);
+    }
+}
+
+function syncUIPanels() {
+    initSettingsUI();
+    runAutopilotDueCheck(); 
+    updateDashboard();
+    if(document.getElementById('dirShift')) filterClasses('dirShift', 'dirClass'); 
+    if(document.getElementById('attShift')) filterClasses('attShift', 'attClass');
+    updateClassStatusIndicator();
+    renderStudents(); 
+    renderDefaulters();
+    renderPaidStudents();
+    runAiBriefingModels();
+}
 
         function updateClock() {
             var now = new Date();
@@ -133,40 +720,119 @@
             return prefix + '_' + new Date().getTime() + '_' + Math.floor(Math.random() * 1000);
         }
 
-        function sendSuccessMsg(name, phone, amt, mnth, mode) {
-            var msg = `Payment Successful! 🎉\n\nWe received your payment of *₹${amt}* via *${mode}* for *${mnth.toUpperCase()}* for *${name.toUpperCase()}*.\n\nThank you! ✨\n\n- VIJAY SIR EDUCATION HUB`;
-            // DIRECT BACKGROUND CALL (No Window.open)
-            gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
-            showToast("SILENT RECEIPT DISPATCHED");
+        async function sendSuccessMsg(name, phone, amt, mnth, mode) {
+            var msg = `Fee Payment Receipt 🧾✨\n\nDear Parent,\n\nWe have received the monthly fee payment of *₹${amt}* for *${name.toUpperCase()}* for the month of *${mnth.toUpperCase()}* (Mode: *${mode}*).\n\nThank you for your timely payment and trust in us! We are committed to providing the best learning guidance and care for your child's bright academic future. 🌟\n\nWith Best Regards,\n*VIJAY SIR EDUCATION HUB*`;
+            showToast("DISPATCHING RECEIPT TO WHATSAPP...");
+            let res = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
+            if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
+                showToast("✔ RECEIPT SENT TO WHATSAPP!");
+            } else {
+                showToast("RECEIPT DISPATCH LOGGED");
+            }
         }
 
-        function sendSoftReminder(index, isAuto = false) {
-            let hour = new Date().getHours();
-            if (hour < 9 || hour >= 20) {
-                if (!isAuto) alert("AUTOMATED ALERTS PAUSED: Messages can only be sent between 9:00 AM and 8:00 PM.");
+                        async function sendSoftReminder(index, isAuto = false) {
+            let s = appData.students[index];
+            if (!s || !s.phone) {
+                if (!isAuto) showToast("STUDENT HAS NO PHONE NUMBER");
                 return;
             }
-            
-            let s = appData.students[index];
-            let fee = s.fee || 500;
-            var msg = `Greetings! 🌟\n\nHope *${s.name.toUpperCase()}* is doing well.\n\nThis is a gentle reminder regarding the monthly fee of *₹${fee}* for *${targetFeeMonth.toUpperCase()}*. Kindly process it when convenient.\n\nWarm Regards,\nVIJAY SIR EDUCATION HUB`;
-            
-            gasApi('stealthWhatsAppTrigger', { phone: s.phone, message: msg });
-            
+
+            let dues = calculateStudentDues(s, appData.payments);
+            if (!dues.isOverdue) {
+                if (!isAuto) showToast("ALL FEES ARE CLEARED FOR " + s.name.toUpperCase());
+                return;
+            }
+
+            let feeAmt = dues.totalPendingAmount;
+            let monthsText = dues.formattedPendingText;
+
+            var msg = `Greetings! 🌟
+
+Hope *${s.name.toUpperCase()}* is doing well.
+
+This is a gentle reminder regarding the pending fee of *₹${feeAmt}* for *${monthsText}*. Kindly process it when convenient.
+
+Warm Regards,
+*VIJAY SIR EDUCATION HUB*`;
+
+            if (!isAuto) showToast("SENDING REMINDER TO " + s.name.toUpperCase() + "...");
+            let res = await gasApi('stealthWhatsAppTrigger', { phone: s.phone, message: msg });
+
             if (!s.reminderHistory) s.reminderHistory = [];
             let now = new Date();
             let timeStr = now.toLocaleDateString('en-GB') + " " + now.toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
             s.reminderHistory.push(timeStr);
-            
-            localStorage.setItem('vsehData', JSON.stringify(appData));
+
+            // Record in persistent log so auto-reminder will never duplicate for this cycle
+            if (dues.pendingMonths && dues.pendingMonths.length > 0) {
+                let cycleYear = now.getFullYear();
+                let logKey = (s.id || s.name).trim().toUpperCase() + '_' + dues.pendingMonths[0].toUpperCase() + '_' + cycleYear;
+                try {
+                    let stored = localStorage.getItem('vseh_auto_reminders_log');
+                    let log = stored ? JSON.parse(stored) : {};
+                    log[logKey] = now.toISOString();
+                    localStorage.setItem('vseh_auto_reminders_log', JSON.stringify(log));
+                    if (!appData.autoRemindersLog) appData.autoRemindersLog = {};
+                    appData.autoRemindersLog[logKey] = now.toISOString();
+                } catch(e) {}
+            }
+
             if (!isAuto) {
                 renderDefaulters();
-                showToast("SILENT REMINDER DISPATCHED");
+                if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
+                    showToast("✔ REMINDER SENT TO " + s.name.toUpperCase());
+                } else {
+                    showToast("✖ FAILED: " + (res && res.message ? res.message : "COULD NOT SEND"));
+                }
+            }
+        }
+
+        async function testWaSend() {
+            let phone = document.getElementById('waTestPhone').value.trim();
+            let resP = document.getElementById('waTestResult');
+            let btn = document.getElementById('btn-test-wa');
+            if (!phone || phone.length < 10) {
+                showToast("ENTER 10-DIGIT MOBILE NUMBER");
+                return;
+            }
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Sending...';
+                btn.disabled = true;
+            }
+            if (resP) {
+                resP.classList.remove('hidden', 'text-green-600', 'text-red-500');
+                resP.classList.add('text-indigo-600');
+                resP.innerText = 'Dispatching message to WhatsApp...';
+            }
+
+            let testMsg = 'VIJAY SIR EDUCATION HUB - WhatsApp Integration Test Successful! 🎉';
+            let result = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: testMsg });
+
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-paper-plane mr-1"></i> Test Send';
+                btn.disabled = false;
+            }
+
+            if (result && (result.status === 'success' || result.sent === 'true' || result.sent === true || result.message === 'ok')) {
+                if (resP) {
+                    resP.classList.remove('text-indigo-600', 'text-red-500');
+                    resP.classList.add('text-green-600');
+                    resP.innerText = '✔ WhatsApp Message Sent Successfully! Check WhatsApp.';
+                }
+                showToast("TEST WHATSAPP SENT SUCCESSFULLY!");
+            } else {
+                if (resP) {
+                    resP.classList.remove('text-indigo-600', 'text-green-600');
+                    resP.classList.add('text-red-500');
+                    resP.innerText = '✖ Failed: ' + (result ? (result.message || JSON.stringify(result)) : 'Unknown error');
+                }
+                showToast("FAILED TO SEND WHATSAPP");
             }
         }
 
         function runAiBriefingModels() {
-            let activeStudents = appData.students.length;
+            let activeStudents = (appData.students || []).length;
             let unpaidCount = activeStudents - appData.paidCount;
             if (unpaidCount < 0) unpaidCount = 0;
             
@@ -226,9 +892,38 @@
                 var bg = btn.querySelector('.nav-icon-bg'); if(bg) bg.classList.add(bgCol);
             }
             
-            if(id === 'dashboard') { updateDashboard(); renderDefaulters(); renderPaidStudents(); }
+            if(id === 'dashboard') { updateDashboard();
+        if(document.getElementById('dirShift')) filterClasses('dirShift', 'dirClass'); renderDefaulters(); renderPaidStudents(); }
+            if(id === 'defaulters') { renderDefaulters(); }
             if(id === 'paid-students') { renderPaidStudents(); }
-            if(id === 'attendance') { document.getElementById('attDate').valueAsDate = new Date(); updateClassStatusIndicator(); loadAttendanceStudents(); }
+            
+            let header = document.getElementById('mainHeader');
+            let headerTitle = document.getElementById('headerTitle');
+            let headerSub = document.getElementById('headerSub');
+            let headerBadge = document.getElementById('headerBadge');
+            
+            if (id === 'attendance') {
+                header.classList.remove('p-4', 'mb-2');
+                header.classList.add('p-2', 'mb-1', 'justify-center');
+                headerTitle.classList.remove('text-xl', 'text-left');
+                headerTitle.classList.add('text-sm', 'text-center');
+                if(headerSub) headerSub.classList.add('hidden');
+                if(headerBadge) headerBadge.classList.add('hidden');
+            } else {
+                header.classList.add('p-4', 'mb-2');
+                header.classList.remove('p-2', 'mb-1', 'justify-center');
+                headerTitle.classList.add('text-xl', 'text-left');
+                headerTitle.classList.remove('text-sm', 'text-center');
+                if(headerSub) headerSub.classList.remove('hidden');
+                if(headerBadge) headerBadge.classList.remove('hidden');
+            }
+            
+            if(id === 'attendance') { 
+                document.getElementById('attDate').valueAsDate = new Date(); 
+                if (document.getElementById('attShift')) filterClasses('attShift', 'attClass');
+                updateClassStatusIndicator(); 
+                loadAttendanceStudents(); 
+            }
             if(id === 'fee') { 
                 document.getElementById('feeForm').reset(); 
                 document.getElementById('feeDate').valueAsDate = new Date(); 
@@ -244,13 +939,13 @@
         }
 
         function updateDashboard() {
-            document.getElementById('dash-all').innerText = appData.students.length;
+            document.getElementById('dash-all').innerText = (appData.students || []).length;
             
             let uniquePaid = new Set();
             var amt = 0;
             
-            for(var i=0; i<appData.payments.length; i++) {
-                let p = appData.payments[i];
+            for(var i=0; i<(appData.payments || []).length; i++) {
+                let p = (appData.payments || [])[i];
                 if(p.month === targetFeeMonth && new Date(p.date).getFullYear() === new Date().getFullYear()) {
                     amt += Number(p.amount || 0);
                     uniquePaid.add(p.studentName + '_' + p.className);
@@ -264,9 +959,16 @@
             amtEl.innerText = isRevenueHidden ? '₹ •••••' : '₹' + amt.toLocaleString('en-IN');
             
             var list = document.getElementById('recent-list'); list.innerHTML = '';
-            if(appData.payments.length === 0) { list.innerHTML = '<div class="glass-panel p-6 rounded-24 text-center"><p class="text-10 font-black text-gray-400 uppercase tracking-widest">NO TRANSACTIONS YET</p></div>'; return; }
             
-            var recent = appData.payments.slice().reverse().slice(0, 5);
+            let dismissed = new Set(appData.recentDismissedIds || []);
+            var visiblePayments = (appData.payments || []).filter(p => !dismissed.has(p.id));
+            
+            if(visiblePayments.length === 0) { 
+                list.innerHTML = '<div class="glass-panel p-6 rounded-24 text-center"><p class="text-10 font-black text-gray-400 uppercase tracking-widest">NO TRANSACTIONS YET</p></div>'; 
+                return; 
+            }
+            
+            var recent = visiblePayments.slice().reverse().slice(0, 5);
             for(var k=0; k<recent.length; k++) {
                 var p = recent[k];
                 var pDateShow = p.date;
@@ -277,43 +979,174 @@
             }
         }
 
-        function loadAttendanceStudents() {
-            var cls = document.getElementById('attClass').value;
-            var dateStr = document.getElementById('attDate').value;
-            var list = document.getElementById('attendance-list');
-            list.innerHTML = '';
-            
-            if(!cls) { list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">SELECT A CLASS TO BEGIN</p>'; return; }
-            if(!dateStr) { list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">SELECT DATE</p>'; return; }
-            
-            var filtered = appData.students.filter(s => s.class === cls);
-            if(filtered.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">NO STUDENTS IN THIS CLASS</p>'; return; }
-            
-            let existingRecord = null;
-            if (appData.attendance) {
-                existingRecord = appData.attendance.find(a => a.date === dateStr && a.class === cls);
+
+                        function toggleRecentLock() {
+            recentLocked = !recentLocked;
+            let icon = document.getElementById('recent-lock-icon');
+            let btn = document.getElementById('btn-clear-recent');
+            let lockBtn = document.getElementById('recent-lock-btn');
+            if (recentLocked) {
+                if (icon) {
+                    icon.className = 'fas fa-lock';
+                    icon.style.fontSize = '8px';
+                }
+                if (lockBtn) {
+                    lockBtn.className = 'bg-red-50 text-red-500 rounded flex items-center justify-center border border-red-100 active:scale-90 transition shadow-none';
+                }
+                if (btn) {
+                    btn.disabled = true;
+                    btn.className = 'bg-red-50 text-red-500 border border-red-100 rounded font-black uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition flex items-center shadow-none';
+                }
+            } else {
+                if (icon) {
+                    icon.className = 'fas fa-unlock';
+                    icon.style.fontSize = '8px';
+                }
+                if (lockBtn) {
+                    lockBtn.className = 'bg-green-50 text-green-600 rounded flex items-center justify-center border border-green-200 active:scale-90 transition shadow-none';
+                }
+                if (btn) {
+                    btn.disabled = false;
+                    btn.className = 'bg-red-600 text-white border border-red-600 rounded font-black uppercase tracking-wider active:scale-95 transition flex items-center shadow-none';
+                }
+            }
+        }
+
+        async function clearRecentPayments() {
+            if (recentLocked) {
+                showToast("UNLOCK LOCK FIRST");
+                return;
             }
             
-            filtered.forEach(s => {
-                let pSel = '';
-                let aSel = '';
-                if (existingRecord && existingRecord.records && existingRecord.records[s.name]) {
-                    if (existingRecord.records[s.name] === 'Present') pSel = 'data-selected="Present"';
-                    else if (existingRecord.records[s.name] === 'Absent') aSel = 'data-selected="Absent"';
-                }
+            let dismissed = new Set(appData.recentDismissedIds || []);
+            let visiblePayments = (appData.payments || []).filter(p => !dismissed.has(p.id));
+            if (visiblePayments.length === 0) {
+                showToast("NO RECENT TRANSACTIONS TO CLEAR");
+                return;
+            }
+            
+            let btn = document.getElementById('btn-clear-recent');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size: 7px !important;"></i>';
+                btn.disabled = true;
+            }
+            
+            let idsToDismiss = visiblePayments.map(p => p.id);
+            let res = await gasApi('clearRecentPayments', { ids: idsToDismiss });
+            if (res && res.status === 'success') {
+                appData = Object.assign(appData, res);
+            }
+            
+            showToast("RECENT FEED CLEARED (PAID LIST PRESERVED)");
+            if (!recentLocked) toggleRecentLock();
+            
+            updateDashboard();
+            renderPaidStudents();
+            renderDefaulters();
+        }
+
+        function selectAttClassBadge(cls) {
+            let attClass = document.getElementById('attClass');
+            if (attClass) {
+                attClass.value = cls;
+                loadAttendanceStudents();
+            }
+        }
+
+        function loadAttendanceStudents() {
+            var shiftElem = document.getElementById('attShift');
+            var shift = (shiftElem && shiftElem.value) ? shiftElem.value : 'Evening';
+            var cls = document.getElementById('attClass') ? document.getElementById('attClass').value : 'All';
+            var dateStr = document.getElementById('attDate') ? document.getElementById('attDate').value : '';
+            var list = document.getElementById('attendance-list');
+            if(!list) return;
+            list.innerHTML = '';
+            
+            if(!dateStr) { 
+                list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">SELECT DATE</p>'; 
+                return; 
+            }
+            
+            // Filter students by shift
+            var shiftStudents = (appData.students || []).filter(s => (s.shift || 'Morning') === shift);
+            if(cls && cls !== 'All') {
+                shiftStudents = shiftStudents.filter(s => s.class === cls);
+            }
+            
+            if(shiftStudents.length === 0) { 
+                list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">NO STUDENTS IN THIS SHIFT & CLASS</p>'; 
+                return; 
+            }
+            
+            // If 'All' is selected, group by class!
+            if (!cls || cls === 'All') {
+                let classMap = {};
+                shiftStudents.forEach(s => {
+                    let c = s.class || 'Other';
+                    if (!classMap[c]) classMap[c] = [];
+                    classMap[c].push(s);
+                });
                 
-                list.innerHTML += `
-                <div class="glass-panel p-3 rounded-2xl flex justify-between items-center mb-2" data-student-name="${s.name}">
-                    <div>
-                        <p class="font-black text-gray-800 text-xs force-uppercase">${s.name}</p>
-                        <p class="text-8 font-bold text-gray-400 mt-0.5 tracking-widest">${s.phone}</p>
-                    </div>
-                    <div class="flex space-x-2">
-                        <button onclick="setAtt(this, 'Present')" ${pSel} class="att-btn px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200 text-gray-400 bg-gray-50 uppercase">P</button>
-                        <button onclick="setAtt(this, 'Absent')" ${aSel} class="att-btn px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200 text-gray-400 bg-gray-50 uppercase">A</button>
-                    </div>
-                </div>`;
-            });
+                let sortedClasses = Object.keys(classMap).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+                
+                sortedClasses.forEach(cName => {
+                    let stuList = classMap[cName];
+                    list.insertAdjacentHTML('beforeend', `
+                        <div class="flex items-center justify-between mt-3 mb-2 px-1">
+                            <span class="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg uppercase tracking-wider">
+                                <i class="fas fa-chalkboard-teacher mr-1 text-indigo-500"></i> CLASS ${cName}
+                            </span>
+                            <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">${stuList.length} ${stuList.length === 1 ? 'Student' : 'Students'}</span>
+                        </div>
+                    `);
+                    
+                    let existingRecord = (appData.attendance || []).find(a => a.date === dateStr && a.class === cName);
+                    
+                    stuList.forEach(s => {
+                        let pSel = '';
+                        let aSel = '';
+                        if (existingRecord && existingRecord.records && existingRecord.records[s.name]) {
+                            if (existingRecord.records[s.name] === 'Present') pSel = 'data-selected="Present"';
+                            else if (existingRecord.records[s.name] === 'Absent') aSel = 'data-selected="Absent"';
+                        }
+                        
+                        list.insertAdjacentHTML('beforeend', `
+                        <div class="glass-panel p-2.5 rounded-2xl flex justify-between items-center mb-2" data-student-name="${s.name}" data-student-class="${s.class}">
+                            <div>
+                                <p class="font-black text-gray-800 text-xs force-uppercase">${s.name}</p>
+                                <p class="text-8 font-bold text-gray-400 mt-0.5 tracking-widest">${s.class} • ${s.phone || 'No Phone'}</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="setAtt(this, 'Present')" ${pSel} class="att-btn px-3 py-1.5 rounded-xl text-xs font-black border border-gray-200 text-gray-500 bg-gray-50 uppercase shadow-sm">P</button>
+                                <button onclick="setAtt(this, 'Absent')" ${aSel} class="att-btn px-3 py-1.5 rounded-xl text-xs font-black border border-gray-200 text-gray-500 bg-gray-50 uppercase shadow-sm">A</button>
+                            </div>
+                        </div>`);
+                    });
+                });
+            } else {
+                // Single class view
+                let existingRecord = (appData.attendance || []).find(a => a.date === dateStr && a.class === cls);
+                shiftStudents.forEach(s => {
+                    let pSel = '';
+                    let aSel = '';
+                    if (existingRecord && existingRecord.records && existingRecord.records[s.name]) {
+                        if (existingRecord.records[s.name] === 'Present') pSel = 'data-selected="Present"';
+                        else if (existingRecord.records[s.name] === 'Absent') aSel = 'data-selected="Absent"';
+                    }
+                    
+                    list.insertAdjacentHTML('beforeend', `
+                    <div class="glass-panel p-2.5 rounded-2xl flex justify-between items-center mb-2" data-student-name="${s.name}" data-student-class="${s.class}">
+                        <div>
+                            <p class="font-black text-gray-800 text-xs force-uppercase">${s.name}</p>
+                            <p class="text-8 font-bold text-gray-400 mt-0.5 tracking-widest">${s.class} • ${s.phone || 'No Phone'}</p>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="setAtt(this, 'Present')" ${pSel} class="att-btn px-3 py-1.5 rounded-xl text-xs font-black border border-gray-200 text-gray-500 bg-gray-50 uppercase shadow-sm">P</button>
+                            <button onclick="setAtt(this, 'Absent')" ${aSel} class="att-btn px-3 py-1.5 rounded-xl text-xs font-black border border-gray-200 text-gray-500 bg-gray-50 uppercase shadow-sm">A</button>
+                        </div>
+                    </div>`);
+                });
+            }
         }
 
         function setAtt(btn, status) {
@@ -332,664 +1165,169 @@
         }
 
         function updateClassStatusIndicator() {
-            let date = document.getElementById('attDate').value;
+            let date = document.getElementById('attDate') ? document.getElementById('attDate').value : '';
+            let shiftElem = document.getElementById('attShift');
+            let shift = (shiftElem && shiftElem.value) ? shiftElem.value : 'Evening';
             let indicator = document.getElementById('attStatusIndicator');
             if(!indicator) return;
             indicator.innerHTML = '';
             
-            if(!date) return;
+            if(!date) {
+                let now = new Date();
+                date = now.toISOString().split('T')[0];
+                let dateInput = document.getElementById('attDate');
+                if (dateInput) dateInput.value = date;
+            }
             
-            let classes = Object.keys(appData.feeSettings);
-            if(classes.length === 0) classes = [...new Set(appData.students.map(s => s.class))].filter(Boolean);
+            // Only get classes for the selected shift (from feeSettings and students)
+            let classSet = new Set();
+            if (appData.feeSettings) {
+                let keys = Object.keys(appData.feeSettings);
+                keys.forEach(k => {
+                    if (k.startsWith(shift + ' - ')) {
+                        classSet.add(k.replace(shift + ' - ', ''));
+                    }
+                });
+            }
+            (appData.students || []).forEach(s => {
+                if ((s.shift || 'Morning') === shift && s.class) {
+                    classSet.add(s.class);
+                }
+            });
+
+            // Ensure standard tuition classes are always present for the shift
+            if (classSet.size === 0) {
+                ['9th', '10th', '11th', '12th'].forEach(c => classSet.add(c));
+            }
             
-            classes.sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+            let classes = Array.from(classSet).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
             
             let html = '';
             classes.forEach(cls => {
-                let isDone = appData.attendance && appData.attendance.find(a => a.date === date && a.class === cls);
-                if (isDone) {
-                    html += `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-[9px] font-black uppercase"><i class="fas fa-check mr-1"></i> ${cls}</span>`;
-                } else {
-                    html += `<span class="bg-gray-100 text-gray-500 px-2 py-1 rounded text-[9px] font-black uppercase"><i class="fas fa-clock mr-1"></i> ${cls}</span>`;
+                let shiftStudents = (appData.students || []).filter(s => s.class === cls && (s.shift || 'Morning') === shift);
+                let totalStudents = shiftStudents.length;
+                
+                let markedCount = 0;
+                let existingRecord = (appData.attendance || []).find(a => a.date === date && a.class === cls);
+                if (existingRecord && existingRecord.records) {
+                    shiftStudents.forEach(s => {
+                        if (existingRecord.records[s.name]) markedCount++;
+                    });
                 }
+                
+                let isComplete = (totalStudents > 0 && markedCount >= totalStudents);
+                let isPartial = (totalStudents > 0 && markedCount > 0 && markedCount < totalStudents);
+                
+                let badgeStyle = '';
+                let badgeIcon = '';
+                if (totalStudents === 0) {
+                    badgeStyle = 'bg-gray-100 text-gray-400 border border-gray-200';
+                    badgeIcon = '<i class="fas fa-minus-circle mr-1 text-[8px]"></i>';
+                } else if (isComplete) {
+                    badgeStyle = 'bg-green-100 text-green-700 border border-green-200 shadow-sm';
+                    badgeIcon = '<i class="fas fa-check-circle mr-1 text-green-600"></i>';
+                } else if (isPartial) {
+                    badgeStyle = 'bg-yellow-100 text-yellow-800 border border-yellow-200';
+                    badgeIcon = '<i class="fas fa-clock mr-1 text-yellow-600"></i>';
+                } else {
+                    badgeStyle = 'bg-red-50 text-red-600 border border-red-200';
+                    badgeIcon = '<i class="fas fa-hourglass-start mr-1 text-red-400"></i>';
+                }
+                
+                html += `<button type="button" onclick="selectAttClassBadge('${cls}')" class="${badgeStyle} px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center active:scale-95 transition cursor-pointer">
+                    ${badgeIcon} ${cls} (${markedCount}/${totalStudents})
+                </button>`;
             });
             indicator.innerHTML = html;
         }
 
-        async function submitAttendance() {
-            let date = document.getElementById('attDate').value;
-            let cls = document.getElementById('attClass').value;
-            if(!date || !cls) { showToast("SELECT CLASS & DATE"); return; }
-            
-            if(!appData.attendance) appData.attendance = [];
-            
-            let records = {};
-            let recordsArray = [];
-            let absentMessages = [];
-            let container = document.getElementById('attendance-list');
-            let rows = container.children;
-            for(let i=0; i<rows.length; i++) {
-                let name = rows[i].getAttribute('data-student-name');
-                if(!name) continue;
-                let selectedBtn = rows[i].querySelector('.att-btn[data-selected]');
-                records[name] = selectedBtn ? selectedBtn.getAttribute('data-selected') : 'Unmarked';
-                
-                let targetStudent = appData.students.find(s => s.name === name && s.class === cls);
-                if (!targetStudent) targetStudent = appData.students.find(s => s.name === name);
-                
-                if (records[name] !== 'Unmarked') {
-                    recordsArray.push({
-                        id: generateId('ATT'),
-                        studentId: targetStudent ? (targetStudent.id || '') : '',
-                        studentName: name,
-                        class: cls,
-                        date: date,
-                        month: currentMonthName,
-                        status: records[name]
-                    });
-                }
-                
-                if (records[name] === 'Absent') {
-                    let wasAlreadyAbsent = false;
-                    let existingRecord = appData.attendance.find(a => a.date === date && a.class === cls);
-                    if (existingRecord && existingRecord.records && existingRecord.records[name] === 'Absent') {
-                        wasAlreadyAbsent = true;
-                    }
-                    
-                    if (!wasAlreadyAbsent && targetStudent && targetStudent.phone) {
-                        var formattedDate = date.split('-').reverse().join('/');
-                        var msg = `Attendance Alert ⚠️\n\nDear Parent, your child *${name.toUpperCase()}* is marked *ABSENT* today (${formattedDate}).\n\nPlease ensure they attend regularly.\n\nWarm Regards,\nVIJAY SIR EDUCATION HUB`;
-                        absentMessages.push({ phone: targetStudent.phone, message: msg });
-                    }
-                }
-            }
-            
-            appData.attendance = appData.attendance.filter(a => !(a.date === date && a.class === cls));
-            appData.attendance.push({ date: date, class: cls, records: records, timestamp: new Date().getTime() });
-            
-            if(recordsArray.length > 0) {
-                gasApi('saveAttendanceBatch', recordsArray);
-            }
-            
-            localStorage.setItem('vsehData', JSON.stringify(appData));
-            showToast(`ATTENDANCE SAVED FOR ${cls}`);
-            updateClassStatusIndicator();
-            
-            for(let msgData of absentMessages) {
-                if (appData.waSettings && appData.waSettings.instanceId && appData.waSettings.token) {
-                    let waUrl = `https://api.ultramsg.com/${appData.waSettings.instanceId}/messages/chat`;
-                    let waBody = new URLSearchParams({
-                        token: appData.waSettings.token,
-                        to: "+91" + msgData.phone,
-                        body: msgData.message
-                    });
-                    try {
-                        await fetch(waUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                            body: waBody.toString(),
-                            mode: 'no-cors'
-                        });
-                    } catch(e) {}
-                } else {
-                    await gasApi('stealthWhatsAppTrigger', msgData);
-                }
-                await new Promise(r => setTimeout(r, 800));
-            }
-        }
-
-        function triggerVoiceAttendance() {
-            showToast("AI AUDIO LISTENING...");
-        }
-
-        async function sendAiCommand(cmd) {
-            if (!cmd) return;
-            let history = document.getElementById('ai-chat-history');
-            history.innerHTML += `
-            <div class="flex justify-end mb-4">
-                <div class="bg-purple-600 text-white p-3 rounded-24 rounded-tr-none shadow-md max-w-[80%]">
-                    <p class="text-xs font-bold">${cmd}</p>
-                </div>
-            </div>`;
-            document.getElementById('ai-input').value = '';
-            
-            let typingId = 'typing-' + Date.now();
-            history.innerHTML += `
-            <div id="${typingId}" class="flex justify-start mb-4">
-                <div class="glass-panel p-3 rounded-24 rounded-tl-none border-l-4 border-purple-500 shadow-sm max-w-[90%]">
-                    <p class="text-xs font-bold text-gray-400 italic animate-pulse">Processing...</p>
-                </div>
-            </div>`;
-            history.scrollTop = history.scrollHeight;
-
-            try {
-                let res = await gasApi('processAiCommand', { 
-                    prompt: cmd, 
-                    context: { students: appData.students, paidCount: appData.paidCount } 
-                });
-                
-                let el = document.getElementById(typingId);
-                if (el) el.remove();
-                
-                let reply = "System Error: Unable to reach AI Core.";
-                let rawReply = "";
-                if (res && res.status === 'success' && res.result && res.result.message) {
-                    rawReply = res.result.message;
-                    reply = rawReply.replace(/\n/g, '<br>');
-                } else if (res && res.message) {
-                    reply = "Error: " + res.message;
-                }
-                
-                // Parse AI Actions
-                let cmdMatch = rawReply.match(/<CMD>(.*?)<\/CMD>/);
-                if (cmdMatch) {
-                    let actions = cmdMatch[1].split('|');
-                    if (actions[0] === 'MARK_ATTENDANCE') {
-                        let targetClass = actions[1].trim();
-                        let targetStatus = actions[2].trim();
-                        
-                        document.getElementById('attClass').value = targetClass;
-                        loadAttendanceStudents();
-                        
-                        setTimeout(() => {
-                            let container = document.getElementById('attendance-list');
-                            let rows = container.children;
-                            let markedCount = 0;
-                            for(let i=0; i<rows.length; i++) {
-                                let btns = rows[i].querySelectorAll('.att-btn');
-                                btns.forEach(b => b.removeAttribute('data-selected'));
-                                let btnToClick = Array.from(btns).find(b => b.innerText.trim() === (targetStatus.toLowerCase() === 'present' ? 'P' : 'A'));
-                                if (btnToClick) {
-                                    btnToClick.setAttribute('data-selected', targetStatus);
-                                    markedCount++;
-                                }
-                            }
-                            if (markedCount > 0) submitAttendance();
-                        }, 500);
-                        
-                        reply = reply.replace(cmdMatch[0], '').trim();
-                        if (reply === "") reply = `Successfully marked ${targetStatus} for class ${targetClass}.`;
-                    }
-                }
-
-                history.innerHTML += `
-                <div class="flex justify-start mb-4">
-                    <div class="glass-panel p-4 rounded-24 rounded-tl-none border-l-4 border-purple-500 shadow-sm max-w-[90%]">
-                        <p class="text-xs font-bold text-gray-700 dark:text-gray-200 leading-relaxed">${reply}</p>
-                    </div>
-                </div>`;
-            } catch(e) {
-                let el = document.getElementById(typingId);
-                if (el) el.remove();
-                history.innerHTML += `
-                <div class="flex justify-start mb-4">
-                    <div class="glass-panel p-4 rounded-24 rounded-tl-none border-l-4 border-red-500 shadow-sm max-w-[90%]">
-                        <p class="text-xs font-bold text-red-500">Connection failed.</p>
-                    </div>
-                </div>`;
-            }
-            history.scrollTop = history.scrollHeight;
-        }
-
-        function simulateAudioInput() {
-            showToast("VOICE INPUT TRIGGERED");
-        }
-
-        function toggleAccordion(id) {
-            let el = document.getElementById(id);
-            let icon = document.getElementById(id + '-icon');
-            if (el.classList.contains('hidden')) {
-                el.classList.remove('hidden');
-                icon.style.transform = 'rotate(90deg)';
-            } else {
-                el.classList.add('hidden');
-                icon.style.transform = 'rotate(0deg)';
-            }
-        }
-
-        function renderStudents() {
-            let list = document.getElementById('students-list');
-            let search = document.getElementById('searchInput').value.toLowerCase();
-            list.innerHTML = '';
-            
-            let mapped = appData.students.map((s, idx) => ({...s, originalIndex: idx}));
-            let filtered = mapped.filter(s => s.name.toLowerCase().includes(search) || s.phone.includes(search));
-            
-            if(filtered.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">NO STUDENTS FOUND</p>'; return; }
-            
-            let grouped = {};
-            filtered.forEach(s => {
-                let cls = s.class || 'Unassigned';
-                if(!grouped[cls]) grouped[cls] = [];
-                grouped[cls].push(s);
-            });
-            
-            let classes = Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
-            
-            classes.forEach((cls, i) => {
-                let clsId = 'cls-acc-' + i;
-                let studentsHTML = '';
-                
-                grouped[cls].forEach(s => {
-                    studentsHTML += `
-                    <div class="bg-white p-4 rounded-24 flex justify-between items-center cursor-pointer mb-2 shadow-sm border border-gray-50 active:scale-95 transition" onclick="editStudent(${s.originalIndex})">
-                        <div>
-                            <p class="font-black text-gray-800 text-sm force-uppercase">${s.name}</p>
-                            <p class="text-[10px] font-bold text-gray-400 mt-1 tracking-widest">Fee: ₹${s.fee || 500} • ${s.phone}</p>
-                        </div>
-                        <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-inner">
-                            <i class="fas fa-chevron-right text-[10px]"></i>
-                        </div>
-                    </div>`;
-                });
-                
-                list.innerHTML += `
-                <div class="glass-panel rounded-32 mb-4 overflow-hidden shadow-sm">
-                    <div class="p-4 flex justify-between items-center cursor-pointer bg-white bg-opacity-40 hover:bg-opacity-80 transition active:scale-[0.98]" onclick="toggleAccordion('${clsId}')">
-                        <div class="flex items-center space-x-3">
-                            <div class="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 border border-indigo-200">
-                                <i class="fas fa-layer-group"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-black text-gray-800 text-sm uppercase tracking-wider">CLASS ${cls}</h3>
-                                <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest">${grouped[cls].length} STUDENTS</p>
-                            </div>
-                        </div>
-                        <div class="w-8 h-8 flex items-center justify-center text-gray-400 transition-transform duration-300" id="${clsId}-icon" style="transform: rotate(${search !== '' ? '90deg' : '0deg'});">
-                            <i class="fas fa-chevron-right"></i>
-                        </div>
-                    </div>
-                    <div id="${clsId}" class="p-3 bg-gray-50 bg-opacity-50 transition-all ${search !== '' ? '' : 'hidden'}">
-                        ${studentsHTML}
-                    </div>
-                </div>`;
-            });
-        }
-
-        function renderDefaulters() {
-            let list = document.getElementById('defaulters-list');
-            list.innerHTML = '';
-            
-            let defaulters = [];
-            let now = new Date();
-            
-            appData.students.forEach((s, index) => {
-                let hasPaid = appData.payments.some(p => p.studentName === s.name && p.className === s.class && p.month === targetFeeMonth && new Date(p.date).getFullYear() === now.getFullYear());
-                
-                if (!hasPaid) {
-                    let joinDate = new Date(s.date);
-                    if (!isNaN(joinDate)) {
-                        let diffDays = Math.ceil(Math.abs(now - joinDate) / (1000 * 60 * 60 * 24)); 
-                        if (diffDays >= 30) {
-                            defaulters.push({ student: s, index: index });
-                        }
-                    }
-                }
-            });
-            
-            if(defaulters.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">NO DEFAULTERS</p>'; return; }
-            
-            let count = 0;
-            defaulters.forEach(def => {
-                let s = def.student;
-                let index = def.index;
-                
-                let hour = now.getHours();
-                if (appData.autopilotEnabled && hour >= 9 && hour < 20) {
-                    let lastSentTime = 0;
-                    if (s.reminderHistory && s.reminderHistory.length > 0) {
-                        let lastStr = s.reminderHistory[s.reminderHistory.length - 1];
-                        let parts = lastStr.split(' ');
-                        if (parts.length === 2) {
-                            let dateParts = parts[0].split('/');
-                            if (dateParts.length === 3) {
-                                lastSentTime = new Date(dateParts[2], dateParts[1] - 1, dateParts[0]).getTime();
-                            }
-                        }
-                    }
-                    
-                    let daysSinceLastReminded = (now.getTime() - lastSentTime) / (1000 * 60 * 60 * 24);
-                    if (daysSinceLastReminded > 7) {
-                        setTimeout(() => { sendSoftReminder(index, true); }, 1500 * count);
-                    }
-                }
-
-                if (count >= 3) return;
-                count++;
-                
-                let reminderHTML = '';
-                if(s.reminderHistory && s.reminderHistory.length > 0) {
-                    let lastSent = s.reminderHistory[s.reminderHistory.length - 1];
-                    reminderHTML = `
-                    <div class="text-right flex flex-col items-end">
-                        <span class="text-[8px] font-bold text-gray-400 mb-1 leading-tight">LAST SENT:<br>${lastSent} (${s.reminderHistory.length}x)</span>
-                        <button onclick="sendSoftReminder(${index})" class="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase shadow-sm border border-gray-200 active:scale-95 transition">RESEND</button>
-                    </div>`;
-                } else {
-                    reminderHTML = `<button onclick="sendSoftReminder(${index})" class="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-black uppercase shadow-sm active:scale-95 transition">REMIND</button>`;
-                }
-                
-                list.innerHTML += `
-                <div class="bg-white border-l-4 border-red-500 p-3 rounded-24 shadow-sm flex justify-between items-center mb-3">
-                    <div>
-                        <p class="font-black text-gray-800 text-sm force-uppercase">${s.name}</p>
-                        <p class="text-9 font-bold text-gray-400 mt-1 tracking-widest">${s.class} • Pending ${targetFeeMonth}</p>
-                    </div>
-                    ${reminderHTML}
-                </div>`;
-            });
-        }
-
-        function renderPaidStudents() {
-            let list = document.getElementById('paid-students-list');
-            list.innerHTML = '';
-            
-            let paidStudents = [];
-            let now = new Date();
-            
-            appData.students.forEach((s, index) => {
-                let hasPaid = appData.payments.some(p => p.studentName === s.name && p.className === s.class && p.month === targetFeeMonth && new Date(p.date).getFullYear() === now.getFullYear());
-                
-                if (hasPaid) {
-                    paidStudents.push({ student: s, index: index });
-                }
-            });
-            
-            if(paidStudents.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 text-xs font-bold mt-10 uppercase tracking-widest">NO FEES COLLECTED THIS MONTH YET</p>'; return; }
-            
-            paidStudents.forEach(paid => {
-                let s = paid.student;
-                list.innerHTML += `
-                <div class="bg-white border-l-4 border-green-500 p-3 rounded-24 shadow-sm flex justify-between items-center mb-3">
-                    <div>
-                        <p class="font-black text-gray-800 text-sm force-uppercase">${s.name}</p>
-                        <p class="text-9 font-bold text-gray-400 mt-1 tracking-widest">${s.class} • Paid ${targetFeeMonth}</p>
-                    </div>
-                    <div class="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-500"><i class="fas fa-check"></i></div>
-                </div>`;
-            });
-        }
-
-        function generateStudentsPDF() { 
-            try {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                
-                doc.setFontSize(16);
-                doc.text("VIJAY SIR EDUCATION HUB - STUDENTS", 14, 22);
-                
-                let sorted = [...appData.students].sort((a, b) => (parseInt(a.class) || 0) - (parseInt(b.class) || 0));
-                
-                let bodyData = sorted.map(s => [
-                    s.name.toUpperCase(), 
-                    s.class, 
-                    s.phone, 
-                    s.gender, 
-                    s.fee
-                ]);
-
-                doc.autoTable({
-                    startY: 30,
-                    head: [['Name', 'Class', 'Phone', 'Gender', 'Fee (Rs)']],
-                    body: bodyData,
-                    theme: 'grid',
-                    headStyles: { fillColor: [99, 102, 241] }
-                });
-                
-                doc.save('VSEH_Students.pdf');
-                showToast("PDF DOWNLOADED");
-            } catch(e) {
-                console.error(e);
-                alert("PDF Generation Failed.");
-            }
-        }
-        function openModal() {
-            document.getElementById('addModal').classList.remove('hidden');
-            setTimeout(() => { document.getElementById('modalContent').classList.remove('translate-y-full'); }, 10);
-            document.getElementById('addForm').reset();
-            document.getElementById('stuDate').valueAsDate = new Date();
-            document.getElementById('modalTitle').innerText = 'Registration';
-            document.getElementById('deleteBox').classList.add('hidden');
-            document.getElementById('stuRowIndex').value = '';
-        }
-
-        function closeModal() {
-            document.getElementById('modalContent').classList.add('translate-y-full');
-            setTimeout(() => { document.getElementById('addModal').classList.add('hidden'); }, 300);
-        }
-
-        function editStudent(index) {
-            let s = appData.students[index];
-            openModal();
-            document.getElementById('modalTitle').innerText = 'Edit Profile';
-            document.getElementById('stuName').value = s.name;
-            document.getElementById('stuGender').value = s.gender;
-            document.getElementById('stuClass').value = s.class;
-            document.getElementById('stuPhone').value = s.phone;
-            document.getElementById('stuFee').value = s.fee;
-            document.getElementById('stuDate').value = s.date;
-            
-            document.getElementById('stuRowIndex').value = index;
-            document.getElementById('stuId').value = s.id || '';
-            document.getElementById('deleteBox').classList.remove('hidden');
-            
-            delLocked = true;
-            document.getElementById('del-lock-icon').className = 'fas fa-lock';
-            document.getElementById('btn-actual-del').disabled = true;
-            document.getElementById('btn-actual-del').classList.add('opacity-40');
-        }
-
-        function toggleModalLock() {}
-
-        function saveStudentToServer(e) {
-            e.preventDefault();
-            let name = document.getElementById('stuName').value;
-            let phone = document.getElementById('stuPhone').value;
-            let cls = document.getElementById('stuClass').value;
-            let gender = document.getElementById('stuGender').value;
-            let fee = document.getElementById('stuFee').value;
-            let date = document.getElementById('stuDate').value;
-            let idx = document.getElementById('stuRowIndex').value;
-            let currentId = document.getElementById('stuId').value;
-            if (!currentId) currentId = generateId('STU');
-            
-            let studentData = { id: currentId, name, phone, class: cls, gender, fee, date };
-            
-            if (idx === '') {
-                appData.students.push(studentData);
-                studentData.isEdit = false;
-                showToast("STUDENT ADDED");
-            } else {
-                appData.students[parseInt(idx)] = studentData;
-                studentData.isEdit = true;
-                showToast("STUDENT UPDATED");
-            }
-            
-            gasApi('saveStudent', studentData);
-            
-            closeModal();
-            renderStudents();
-            updateDashboard();
-            localStorage.setItem('vsehData', JSON.stringify(appData));
-        }
-
-        function processFee(e) {
-            e.preventDefault();
-            let amount = document.getElementById('feeAmount').value;
-            let mode = document.getElementById('feeMode').value;
-            if(!mode) { alert('Please select a payment mode.'); return; }
-            let name = document.getElementById('feeStudentSearch').value;
-            let mnth = document.getElementById('feeMonth').value;
-            let cls = document.getElementById('feeClass').value || 'Class';
-            let targetStudent = appData.students.find(s => s.name === name && s.class === cls);
-            if (!targetStudent) targetStudent = appData.students.find(s => s.name === name);
-            let phone = targetStudent ? targetStudent.phone : '';
-
-            let paymentData = {
-                id: generateId('TXN'),
-                studentId: targetStudent ? (targetStudent.id || '') : '',
-                studentName: name, 
-                amount, 
-                mode, 
-                month: mnth, 
-                date: document.getElementById('feeDate').value, 
-                className: cls,
-                phone: phone
-            };
-
-            appData.payments.push(paymentData);
-            appData.paidCount++;
-            
-            gasApi('savePayment', paymentData);
-            
-            sendSuccessMsg(name, phone, amount, mnth, mode);
-            document.getElementById('feeForm').reset();
-            document.getElementById('feeDate').valueAsDate = new Date();
-            document.getElementById('feeMonth').value = currentMonthName;
-            document.getElementById('feeRemainingBox').classList.add('hidden');
-            currentStudentExpectedFee = 0;
-            setMode('');
-            updateDashboard();
-            localStorage.setItem('vsehData', JSON.stringify(appData));
-        }
-
-        function populateFeeStudents() {
-            filterFeeStudents();
-        }
         
-        function filterFeeStudents() {
-            let search = document.getElementById('feeStudentSearch').value.toLowerCase();
-            let clsFilter = document.getElementById('feeClass').value;
-            let listEl = document.getElementById('feeStudentList');
-            
-            if (search.length < 1 && !clsFilter) {
-                listEl.classList.add('hidden');
-                return;
-            }
-            
-            let filtered = appData.students.filter(s => {
-                let matchClass = clsFilter ? s.class === clsFilter : true;
-                let matchName = s.name.toLowerCase().includes(search) || s.phone.includes(search);
-                return matchClass && matchName;
-            });
-            
-            listEl.innerHTML = '';
-            if (filtered.length > 0) {
-                filtered.forEach(s => {
-                    listEl.innerHTML += `
-                    <div class="p-2 border-b border-gray-100 hover:bg-gray-50 cursor-pointer text-xs font-black force-uppercase" onclick="selectFeeStudent('${s.name}', '${s.class}')">
-                        ${s.name} - ${s.class} (${s.phone})
-                    </div>`;
-                });
-                listEl.classList.remove('hidden');
-            } else {
-                listEl.innerHTML = '<div class="p-2 text-xs font-bold text-gray-400">No student found</div>';
-                listEl.classList.remove('hidden');
-            }
-        }
-        function selectFeeStudent(name, cls) {
-            document.getElementById('feeStudentSearch').value = name;
-            document.getElementById('feeClass').value = cls;
-            document.getElementById('feeStudentList').classList.add('hidden');
-            
-            let targetStudent = appData.students.find(s => s.name === name && s.class === cls);
-            if (!targetStudent) targetStudent = appData.students.find(s => s.name === name);
-            if (targetStudent) {
-                currentStudentExpectedFee = parseInt(targetStudent.fee) || 0;
-                document.getElementById('feeAmount').value = currentStudentExpectedFee;
-                calculateRemaining();
-            }
-        }
 
-        function calculateRemaining() {
-            let entered = parseInt(document.getElementById('feeAmount').value) || 0;
-            let remainingBox = document.getElementById('feeRemainingBox');
-            let remainingText = document.getElementById('feeRemainingText');
+
+
+        function openShiftSettings(shift) {
+            document.getElementById('settingsMainMenu').classList.add('hidden');
+            document.getElementById('settingsSubMenu').classList.remove('hidden');
+            document.getElementById('subMenuTitle').innerText = shift + ' Shift';
+            document.getElementById('currentShiftTarget').value = shift;
             
-            if (currentStudentExpectedFee > 0 && entered < currentStudentExpectedFee) {
-                let diff = currentStudentExpectedFee - entered;
-                remainingBox.classList.remove('hidden');
-                remainingText.innerText = 'REMAINING: ₹' + diff;
-            } else {
-                remainingBox.classList.add('hidden');
-            }
-        }
-
-        function setMode(mode) {
-            document.getElementById('feeMode').value = mode;
-            document.querySelectorAll('.mode-btn').forEach(b => {
-                b.classList.remove('border-green-500', 'bg-green-50', 'text-green-600');
-                b.classList.add('border-gray-200', 'bg-gray-50', 'text-gray-500');
-            });
-            if(mode) {
-                let btn = document.getElementById(mode === 'CASH' ? 'mode-CASH' : 'mode-UPI');
-                if(btn) {
-                    btn.classList.remove('border-gray-200', 'bg-gray-50', 'text-gray-500');
-                    btn.classList.add('border-green-500', 'bg-green-50', 'text-green-600');
-                }
-            }
-        }
-
-        function initSettingsUI() {
             let box = document.getElementById('dynamicClassesBox');
             box.innerHTML = '';
             for (let cls in appData.feeSettings) {
-                box.insertAdjacentHTML('beforeend', `
-                <div class="flex items-center space-x-2 mb-2 cls-row">
-                    <input type="text" class="mobile-input cls-name flex-1" value="${cls}" ${clsLocked ? 'disabled' : ''}>
-                    <input type="number" class="mobile-input cls-fee flex-1" value="${appData.feeSettings[cls]}" ${clsLocked ? 'disabled' : ''}>
-                    <button type="button" onclick="this.parentElement.remove()" class="del-cls-btn w-12 shrink-0 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100 h-12 active:scale-95 transition" ${clsLocked ? 'disabled style="opacity:0.3"' : ''}><i class="fas fa-trash"></i></button>
-                </div>`);
+                if (cls.startsWith(shift + " - ")) {
+                    let cleanName = cls.replace(shift + " - ", "");
+                    box.insertAdjacentHTML('beforeend', `
+                    <div class="flex items-center space-x-2 mb-2 cls-row">
+                        <input type="text" class="mobile-input cls-name w-1/2 text-xs" value="${cleanName}" ${clsLocked ? 'disabled' : ''}>
+                        <input type="number" class="mobile-input cls-fee w-1/2 text-xs" value="${appData.feeSettings[cls]}" ${clsLocked ? 'disabled' : ''}>
+                        <button type="button" onclick="this.parentElement.remove()" class="del-cls-btn w-10 shrink-0 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100 h-10 active:scale-95 transition" ${clsLocked ? 'disabled style="opacity:0.3"' : ''}><i class="fas fa-trash"></i></button>
+                    </div>`);
+                }
             }
-            if (appData.waSettings) {
-                document.getElementById('waInstanceId').value = appData.waSettings.instanceId || '';
-                document.getElementById('waToken').value = appData.waSettings.token || '';
+        }
+
+        function closeShiftSettings() {
+            document.getElementById('settingsSubMenu').classList.add('hidden');
+            document.getElementById('settingsMainMenu').classList.remove('hidden');
+        }
+
+        function initSettingsUI() {
+            if (appData && appData.waSettings) {
+                let instElem = document.getElementById('waInstanceId');
+                let tokElem = document.getElementById('waToken');
+                if (instElem) instElem.value = appData.waSettings.instanceId || 'instance175857';
+                if (tokElem) tokElem.value = appData.waSettings.token || '7yqm7bhojwpovbu4';
             }
             initFeeClasses();
         }
 
-        function initFeeClasses() {
-            let classes = Object.keys(appData.feeSettings);
-            if(classes.length === 0) classes = ['10th', '9th', '8th'];
-            
-            let selects = ['attClass', 'stuClass', 'feeClass'];
-            selects.forEach(id => {
-                let el = document.getElementById(id);
-                if(!el) return;
-                let oldVal = el.value;
-                el.innerHTML = '<option value="">-- SELECT --</option>';
-                classes.forEach(c => {
-                    el.innerHTML += `<option value="${c}">${c}</option>`;
-                });
-                el.value = oldVal;
-            });
+        function addNewClassInput() {
+            let box = document.getElementById('dynamicClassesBox');
+            box.insertAdjacentHTML('beforeend', `
+            <div class="flex items-center space-x-2 mb-2 cls-row">
+                <input type="text" class="mobile-input cls-name w-1/2 text-xs" placeholder="Class Name">
+                <input type="number" class="mobile-input cls-fee w-1/2 text-xs" placeholder="Fee">
+                <button type="button" onclick="this.parentElement.remove()" class="del-cls-btn w-10 shrink-0 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100 h-10 active:scale-95 transition"><i class="fas fa-trash"></i></button>
+            </div>`);
+        }
+
+        function checkSaveBtnState() {
+            let clsBtn = document.getElementById('btn-save-cls');
+            if (clsBtn) clsBtn.disabled = clsLocked;
+            let waBtn = document.getElementById('btn-save-wa');
+            if (waBtn) waBtn.disabled = waLocked;
         }
 
         function toggleSetLock() {
             setLocked = !setLocked;
-            document.getElementById('set-lock-thumb').style.transform = setLocked ? 'translateX(0)' : 'translateX(100%)';
-            document.getElementById('set-lock-btn').classList.toggle('bg-gray-300', setLocked);
-            document.getElementById('set-lock-btn').classList.toggle('bg-green-500', !setLocked);
-            document.getElementById('set-lock-label').innerText = setLocked ? 'LOCKED' : 'UNLOCKED';
+            let thumb = document.getElementById('set-lock-thumb');
+            if (thumb) thumb.style.transform = setLocked ? 'translateX(0)' : 'translateX(100%)';
+            let btn = document.getElementById('set-lock-btn');
+            if (btn) {
+                btn.classList.toggle('bg-gray-300', setLocked);
+                btn.classList.toggle('bg-green-500', !setLocked);
+            }
+            let label = document.getElementById('set-lock-label');
+            if (label) label.innerText = setLocked ? 'LOCKED' : 'UNLOCKED';
             
             if (setLocked) {
                 if (!clsLocked) toggleClsLock();
                 if (!waLocked) toggleWaLock();
             }
         }
-
-        function checkSaveBtnState() {
-            document.getElementById('btn-save-set').disabled = (clsLocked && waLocked);
-        }
         
         function toggleClsLock() {
             if (setLocked && clsLocked) { showToast("UNLOCK MASTER LOCK FIRST"); return; }
             clsLocked = !clsLocked;
             let icon = document.getElementById('cls-lock-icon');
-            icon.className = clsLocked ? 'fas fa-lock text-xs' : 'fas fa-unlock text-xs';
-            icon.parentElement.className = clsLocked ? 'w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner' : 'w-7 h-7 bg-green-50 rounded-full flex items-center justify-center text-green-500 active:scale-90 transition shadow-inner';
+            if (icon) {
+                icon.className = clsLocked ? 'fas fa-lock text-xs' : 'fas fa-unlock text-xs';
+                icon.parentElement.className = clsLocked ? 'w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner' : 'w-7 h-7 bg-green-50 rounded-full flex items-center justify-center text-green-500 active:scale-90 transition shadow-inner';
+            }
             
-            document.getElementById('btn-add-cls').disabled = clsLocked;
+            let btnAdd = document.getElementById('btn-add-cls');
+            if (btnAdd) btnAdd.disabled = clsLocked;
+            
             document.querySelectorAll('.cls-row input').forEach(input => input.disabled = clsLocked);
             document.querySelectorAll('.del-cls-btn').forEach(btn => {
                 btn.disabled = clsLocked;
@@ -1002,98 +1340,1112 @@
             if (setLocked && waLocked) { showToast("UNLOCK MASTER LOCK FIRST"); return; }
             waLocked = !waLocked;
             let icon = document.getElementById('wa-lock-icon');
-            icon.className = waLocked ? 'fas fa-lock text-xs' : 'fas fa-unlock text-xs';
-            icon.parentElement.className = waLocked ? 'w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner' : 'w-7 h-7 bg-green-50 rounded-full flex items-center justify-center text-green-500 active:scale-90 transition shadow-inner';
-            
+            if (icon) {
+                icon.className = waLocked ? 'fas fa-lock text-xs' : 'fas fa-unlock text-xs';
+                icon.parentElement.className = waLocked ? 'w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner' : 'w-7 h-7 bg-green-50 rounded-full flex items-center justify-center text-green-500 active:scale-90 transition shadow-inner';
+            }
             document.querySelectorAll('.wa-setting').forEach(input => input.disabled = waLocked);
             checkSaveBtnState();
         }
         
-        function saveSettings(e) {
-            e.preventDefault();
+        async function saveShiftSettings(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            let shift = document.getElementById('currentShiftTarget').value;
             let rows = document.querySelectorAll('.cls-row');
-            appData.feeSettings = {};
+            
+            // Remove old entries for this shift
+            for (let k in appData.feeSettings) {
+                if (k.startsWith(shift + " - ")) {
+                    delete appData.feeSettings[k];
+                }
+            }
+            
             rows.forEach(r => {
                 let n = r.querySelector('.cls-name').value;
                 let f = r.querySelector('.cls-fee').value;
-                if (n && f) appData.feeSettings[n] = f;
-            });
-            appData.waSettings = {
-                instanceId: document.getElementById('waInstanceId').value,
-                token: document.getElementById('waToken').value
-            };
-            
-            gasApi('saveAllSettings', { 
-                feeSettings: appData.feeSettings, 
-                waSettings: appData.waSettings 
+                if (n && f) {
+                    appData.feeSettings[`${shift} - ${n}`] = f;
+                }
             });
             
-            showToast("SETTINGS SAVED");
-            if (!setLocked) toggleSetLock();
+            await gasApi('saveAllSettings', { feeSettings: appData.feeSettings, waSettings: appData.waSettings });
+            showToast(shift.toUpperCase() + " SETTINGS SAVED");
+            if (!clsLocked) toggleClsLock();
             initFeeClasses();
-            localStorage.setItem('vsehData', JSON.stringify(appData));
-        }
-        
-        function addNewClassInput() {
-            let box = document.getElementById('dynamicClassesBox');
-            box.insertAdjacentHTML('beforeend', `
-            <div class="flex items-center space-x-2 mb-2 cls-row">
-                <input type="text" class="mobile-input cls-name flex-1" placeholder="Class Name">
-                <input type="number" class="mobile-input cls-fee flex-1" placeholder="Default Fee">
-                <button type="button" onclick="this.parentElement.remove()" class="del-cls-btn w-12 shrink-0 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100 h-12 active:scale-95 transition"><i class="fas fa-trash"></i></button>
-            </div>`);
         }
 
-        function autoGuessGender() {
-            // Placeholder logic for future AI guess
+        async function saveWaSettings() {
+            let inst = document.getElementById('waInstanceId').value.trim();
+            let tok = document.getElementById('waToken').value.trim();
+            if (!inst || !tok) {
+                showToast("ENTER BOTH INSTANCE ID & TOKEN");
+                return;
+            }
+
+            let btn = document.getElementById('btn-save-wa');
+            let origHtml = btn ? btn.innerHTML : 'Save WhatsApp Settings';
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> SAVING TO SUPABASE...';
+                btn.disabled = true;
+            }
+
+            appData.waSettings = {
+                instanceId: inst,
+                token: tok
+            };
+
+            let res = await gasApi('saveAllSettings', { feeSettings: appData.feeSettings, waSettings: appData.waSettings });
+            if (res && res.status === 'success') {
+                appData = Object.assign(appData, res);
+            }
+
+            if (btn) {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+
+            showToast("WHATSAPP CONFIG SAVED TO CLOUD");
+            if (!waLocked) toggleWaLock();
+            initSettingsUI();
         }
+
+
+
         
-        function autoFillSetupFee() {
-            let cls = document.getElementById('stuClass').value;
-            if (appData.feeSettings[cls]) {
-                document.getElementById('stuFee').value = appData.feeSettings[cls];
+
+
+        function setMode(mode) {
+    currentMode = mode;
+    let feeMode = document.getElementById('feeMode');
+    if(feeMode) feeMode.value = mode;
+    document.querySelectorAll('.mode-btn').forEach(b => {
+        b.classList.remove('border-green-500', 'bg-green-50', 'text-green-600');
+        b.classList.add('border-gray-200', 'text-gray-500');
+    });
+    if(mode === 'ONLINE / UPI') {
+        let btn = document.getElementById('mode-UPI');
+        if(btn) { btn.classList.add('border-green-500', 'bg-green-50', 'text-green-600'); btn.classList.remove('border-gray-200', 'text-gray-500'); }
+    }
+    if(mode === 'CASH') {
+        let btn = document.getElementById('mode-CASH');
+        if(btn) { btn.classList.add('border-green-500', 'bg-green-50', 'text-green-600'); btn.classList.remove('border-gray-200', 'text-gray-500'); }
+    }
+}
+
+var modalLocked = false;
+
+function applyModalLockState(isLocked) {
+    modalLocked = isLocked;
+    let icon = document.getElementById('modalLockIcon');
+    let lockBtn = document.getElementById('modalLockBtn');
+    let saveBtn = document.getElementById('modalSaveBtn');
+    let fields = ['stuName', 'stuGender', 'stuShift', 'stuClass', 'stuPhone', 'stuFee', 'stuDate'];
+    fields.forEach(fId => {
+        let el = document.getElementById(fId);
+        if (el) {
+            el.disabled = isLocked;
+            if (isLocked) {
+                el.classList.add('opacity-60', 'cursor-not-allowed', 'bg-gray-100');
+            } else {
+                el.classList.remove('opacity-60', 'cursor-not-allowed', 'bg-gray-100');
             }
         }
-        
-        function validatePhone(el) {
-            // HTML pattern handles this already
+    });
+    if (saveBtn) {
+        saveBtn.disabled = isLocked;
+        if (isLocked) {
+            saveBtn.classList.add('opacity-40', 'cursor-not-allowed');
+        } else {
+            saveBtn.classList.remove('opacity-40', 'cursor-not-allowed');
         }
-        
+    }
+    if (lockBtn && icon) {
+        if (isLocked) {
+            icon.className = 'fas fa-lock text-xs text-red-500';
+            lockBtn.className = 'w-8 h-8 bg-red-50 text-red-500 rounded-full flex items-center justify-center active:scale-90 shadow-sm transition border border-red-200';
+            lockBtn.title = "Editing is LOCKED (Tap to unlock)";
+        } else {
+            icon.className = 'fas fa-unlock text-xs text-green-600';
+            lockBtn.className = 'w-8 h-8 bg-green-50 text-green-600 rounded-full flex items-center justify-center active:scale-90 shadow-sm transition border border-green-200';
+            lockBtn.title = "Editing is UNLOCKED (Tap to lock)";
+        }
+    }
+}
+
+function openModal(id) {
+    if(!id || typeof id !== 'string') id = 'addModal';
+    if(id === 'addModal') {
+        let t = document.getElementById('modalTitle');
+        let rIndex = document.getElementById('stuRowIndex');
+        if(!rIndex || rIndex.value === '-1' || rIndex.value === '') {
+            if(t) t.innerText = 'Registration';
+            let lockBtn = document.getElementById('modalLockBtn');
+            if(lockBtn) lockBtn.classList.add('hidden');
+            applyModalLockState(false);
+        }
+    }
+    document.getElementById(id).classList.remove('hidden');
+    setTimeout(() => {
+        let content = document.getElementById('modalContent');
+        if (content) {
+            content.classList.remove('translate-y-full');
+            content.classList.add('translate-y-0');
+        }
+    }, 10);
+}
+
+function closeModal(id) {
+    if(!id || typeof id !== 'string') id = 'addModal';
+    let content = document.getElementById('modalContent');
+    if (content) {
+        content.classList.remove('translate-y-0');
+        content.classList.add('translate-y-full');
+    }
+    setTimeout(() => {
+        document.getElementById(id).classList.add('hidden');
+        if (id === 'addModal') {
+            let f = document.getElementById('addForm');
+            if(f) f.reset();
+            let t = document.getElementById('modalTitle');
+            if(t) t.innerText = 'Registration';
+            let lockBtn = document.getElementById('modalLockBtn');
+            if(lockBtn) lockBtn.classList.add('hidden');
+            applyModalLockState(false);
+            let eIndex = document.getElementById('stuRowIndex');
+            if(eIndex) eIndex.value = '-1';
+            let sId = document.getElementById('stuId');
+            if(sId) sId.value = '';
+            let pCont = document.getElementById('pastMonthsContainer');
+            if(pCont) pCont.classList.add('hidden');
+            let delBox = document.getElementById('deleteBox');
+            if(delBox) delBox.classList.add('hidden');
+            let cbCont = document.getElementById('pastMonthsCheckboxes');
+            if(cbCont) cbCont.innerHTML = '';
+        }
+    }, 300);
+}
+
+function editStudent(index) {
+    if (!appData.students || !appData.students[index]) return;
+    let s = appData.students[index];
+    
+    let t = document.getElementById('modalTitle');
+    if(t) t.innerText = 'Edit Student';
+    
+    document.getElementById('stuRowIndex').value = index;
+    document.getElementById('stuId').value = s.id || '';
+    document.getElementById('stuName').value = s.name;
+    document.getElementById('stuPhone').value = s.phone;
+    if(document.getElementById('stuGender')) document.getElementById('stuGender').value = s.gender || 'Male';
+    
+    if(document.getElementById('stuShift')) {
+        document.getElementById('stuShift').value = s.shift || 'Morning';
+        filterClasses('stuShift', 'stuClass');
+    }
+    document.getElementById('stuClass').value = s.class;
+    document.getElementById('stuFee').value = s.fee;
+    
+    if (s.date) {
+        let parts = s.date.split('/');
+        if (parts.length === 3) {
+            document.getElementById('stuDate').value = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        } else {
+            document.getElementById('stuDate').value = s.date;
+        }
+    }
+    
+    let delBox = document.getElementById('deleteBox');
+    if (delBox) delBox.classList.remove('hidden');
+    
+    let pCont = document.getElementById('pastMonthsContainer');
+    if(pCont) pCont.classList.add('hidden');
+    
+    let lockBtn = document.getElementById('modalLockBtn');
+    if (lockBtn) lockBtn.classList.remove('hidden');
+    applyModalLockState(true);
+    
+    openModal('addModal');
+}
+
+function toggleModalLock() {
+    let nextState = !modalLocked;
+    applyModalLockState(nextState);
+    showToast(nextState ? "EDITING LOCKED 🔒" : "EDITING UNLOCKED 🔓");
+}
+
         function toggleDelLock() {
             delLocked = !delLocked;
-            document.getElementById('del-lock-icon').className = delLocked ? 'fas fa-lock' : 'fas fa-lock-open text-red-500';
-            document.getElementById('btn-actual-del').disabled = delLocked;
-            document.getElementById('btn-actual-del').classList.toggle('opacity-40', delLocked);
-        }
-        
-        function confirmDeleteFromModal() {
-            let idx = document.getElementById('stuRowIndex').value;
-            if (idx !== '') {
-                let targetId = appData.students[parseInt(idx)].id;
-                if (targetId) {
-                    gasApi('deleteStudent', { id: targetId });
-                }
-                
-                appData.students.splice(parseInt(idx), 1);
-                showToast("STUDENT DELETED");
-                closeModal();
-                renderStudents();
-                updateDashboard();
-                localStorage.setItem('vsehData', JSON.stringify(appData));
+            let icon = document.getElementById('del-lock-icon');
+            let btn = document.getElementById('btn-actual-del');
+            let lockBtn = document.getElementById('del-lock-btn');
+            if(delLocked) {
+                icon.className = 'fas fa-lock';
+                btn.disabled = true;
+                btn.classList.add('opacity-40');
+                lockBtn.classList.remove('bg-red-500', 'text-white');
+                lockBtn.classList.add('bg-white', 'text-gray-400');
+            } else {
+                icon.className = 'fas fa-unlock';
+                btn.disabled = false;
+                btn.classList.remove('opacity-40');
+                lockBtn.classList.remove('bg-white', 'text-gray-400');
+                lockBtn.classList.add('bg-red-500', 'text-white');
             }
         }
-        
-        function triggerPtmNoteGeneration() {
-            showToast("GENERATING AI REPORT...");
+
+        async function confirmDeleteFromModal() {
+            if (delLocked) return;
+            let rowIndex = document.getElementById('stuRowIndex').value;
+            let stuId = document.getElementById('stuId').value;
+            
+            document.getElementById('btn-actual-del').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            document.getElementById('btn-actual-del').disabled = true;
+            
+            appData = await gasApi('deleteStudent', { id: stuId, rowIndex: rowIndex });
+            syncUIPanels();
+            closeModal('addModal');
+            showToast("STUDENT DELETED");
         }
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                .then(registration => {
-                    console.log('ServiceWorker registration successful');
-                })
-                .catch(err => {
-                    console.log('ServiceWorker registration failed: ', err);
+
+        function triggerVoiceAttendance() {
+            showToast("Voice Attendance Activated! Please speak...");
+            // Simulated delay for demo
+            setTimeout(() => {
+                simulateAudioInput();
+            }, 1000);
+        }
+
+        function simulateAudioInput() {
+            showToast("Processing Voice... Identifying names...");
+        }
+
+        async function submitAttendance() {
+            let cls = document.getElementById('attClass').value;
+            let date = document.getElementById('attDate').value;
+            let shiftElem = document.getElementById('attShift');
+            let shift = (shiftElem && shiftElem.value) ? shiftElem.value : 'Evening';
+            
+            if(!date) { showToast("SELECT DATE"); return; }
+            
+            let btn = document.querySelector('button[onclick="submitAttendance()"]');
+            if(btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> SAVING...'; btn.disabled = true; }
+            
+            // Read attendance from data-selected attributes on buttons
+            let records = [];
+            let cards = document.querySelectorAll('#attendance-list [data-student-name]');
+            cards.forEach(card => {
+                let name = card.getAttribute('data-student-name');
+                let cardCls = card.getAttribute('data-student-class') || cls;
+                let selectedBtn = card.querySelector('.att-btn[data-selected]');
+                let status = selectedBtn ? selectedBtn.getAttribute('data-selected') : 'Present';
+                let student = (appData.students || []).find(s => s.name === name && (!cardCls || cardCls === 'All' || s.class === cardCls));
+                records.push({
+                    id: generateId('ATT'),
+                    studentId: student ? student.id : '',
+                    studentName: name,
+                    class: student ? student.class : cardCls,
+                    date: date,
+                    month: new Date(date).toLocaleString('default', { month: 'long' }),
+                    status: status
                 });
             });
+            
+            if(records.length === 0) { showToast("NO STUDENTS TO MARK"); if(btn) { btn.innerHTML = 'SAVE & SEND ALERTS <i class="fas fa-paper-plane ml-2 text-lg"></i>'; btn.disabled = false; } return; }
+            
+            let result = await gasApi('saveAttendanceBatch', records);
+            if(result && result.status === 'success') {
+                appData = result;
+                // Live Supabase Data
+            }
+            
+            // Send absent alerts via WhatsApp
+            records.forEach(r => {
+                if (r.status === 'Absent') {
+                    let s = (appData.students || []).find(x => x.name === r.studentName && (!r.class || x.class === r.class));
+                    if (s && s.phone) {
+                        let formattedDate = date;
+                        let d = new Date(date);
+                        if (!isNaN(d.getTime())) {
+                            formattedDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                        }
+                        let studentClass = r.class || cls || 'Class';
+                        let msg = `Dear Parent,\n\nYour ward *${r.studentName.toUpperCase()}* is *ABSENT* today (${formattedDate}) from *${studentClass}* (${shift} Shift).\n\nPlease ensure regular attendance for their continuous learning and academic progress.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+                        sendWaMessage(s.phone, msg);
+                    }
+                }
+            });
+            
+            syncUIPanels();
+            updateClassStatusIndicator();
+            
+            if(btn) { btn.innerHTML = 'SAVE & SEND ALERTS <i class="fas fa-paper-plane ml-2 text-lg"></i>'; btn.disabled = false; }
+            showToast("ATTENDANCE SAVED");
         }
+
+        function generateStudentsPDF() {
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                showToast('PDF LIBRARY LOADING...');
+                return;
+            }
+            
+            let shift = document.getElementById('dirShift') ? document.getElementById('dirShift').value : 'All';
+            let cls = document.getElementById('dirClass') ? document.getElementById('dirClass').value : 'All';
+            
+            let doc = new window.jspdf.jsPDF();
+            doc.setFontSize(18);
+            doc.text("VIJAY SIR EDUCATION HUB", 105, 15, null, null, "center");
+            doc.setFontSize(14);
+            
+            let title = "STUDENTS LIST";
+            if(shift !== "All") title = shift.toUpperCase() + " SHIFT - " + title;
+            if(cls !== "All") title += " (" + cls + ")";
+            doc.text(title, 105, 23, null, null, "center");
+            
+            let now = new Date();
+            let dateStr = now.toLocaleDateString('en-IN');
+            doc.setFontSize(10);
+            doc.text("Date: " + dateStr, 14, 30);
+            
+            let headers = [["Sl No", "Student Name", "Class", "Shift", "Phone", "Fee Status"]];
+            let data = [];
+            
+            let targetStudents = (appData.students || []).filter(s => {
+                let matchShift = shift === "All" || (s.shift || "Morning") === shift;
+                let matchClass = cls === "All" || s.class === cls;
+                return matchShift && matchClass;
+            });
+            
+            let i = 1;
+            let currentMonth = new Date().toLocaleString('default', { month: 'long' });
+            
+            targetStudents.forEach(s => {
+                let payment = (appData.payments || []).find(p => p.studentName === s.name && p.className === s.class && p.month === currentMonth && new Date(p.date).getFullYear() === now.getFullYear());
+                let statusStr = "Pending";
+                if (payment) {
+                    let d = new Date(payment.date);
+                    statusStr = `Paid (${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()})`;
+                }
+                data.push([i++, s.name, s.class, s.shift || "Morning", s.phone, statusStr]);
+            });
+            
+            doc.autoTable({
+                startY: 35,
+                head: headers,
+                body: data,
+                theme: 'striped',
+                headStyles: { fillColor: [79, 70, 229] }
+            });
+            
+            doc.save(`VSEH_Students_${dateStr.replace(/\//g, '-')}.pdf`);
+            showToast("PDF GENERATED");
+        }
+
+        function filterClasses(shiftId, classId) {
+            let shiftElem = document.getElementById(shiftId);
+            let shift = shiftElem ? shiftElem.value : 'All';
+            let clsDropdown = document.getElementById(classId);
+            if (!clsDropdown) return;
+            
+            let isDir = classId === 'dirClass';
+            let isAtt = classId === 'attClass';
+            
+            clsDropdown.innerHTML = (isDir || isAtt) ? '<option value="All">All Classes</option>' : '<option value="">Select Class</option>';
+            
+            let added = new Set();
+            if (appData.feeSettings) {
+                let keys = Object.keys(appData.feeSettings);
+                keys.forEach(k => {
+                    if (shift === 'All' || !shift || k.startsWith(shift + " - ")) {
+                        let c = k.split(" - ")[1];
+                        if (c && !added.has(c)) {
+                            added.add(c);
+                        }
+                    }
+                });
+            }
+            
+            (appData.students || []).forEach(s => {
+                if (shift === 'All' || !shift || (s.shift || 'Morning') === shift) {
+                    if (s.class && !added.has(s.class)) {
+                        added.add(s.class);
+                    }
+                }
+            });
+
+            let sortedClasses = Array.from(added).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+            sortedClasses.forEach(c => {
+                clsDropdown.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
+            });
+        }
+
+        
+
+// ==========================================
+// RESTORED MISSING FUNCTIONS
+// ==========================================
+
+async function saveStudentToServer(e) {
+    e.preventDefault();
+    let isEdit = !!document.getElementById('stuId').value;
+    if (isEdit && modalLocked) {
+        showToast("EDITING IS LOCKED 🔒 (Tap lock to unlock)");
+        return;
+    }
+    document.getElementById('modalSaveBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> SAVING...';
+    document.getElementById('modalSaveBtn').disabled = true;
+    
+    let id = document.getElementById('stuId').value || generateId('STU');
+    let rowIndex = document.getElementById('stuRowIndex').value;
+    let shift = document.getElementById('stuShift') ? document.getElementById('stuShift').value : 'Morning';
+    
+    let data = {
+        id: id,
+        name: document.getElementById('stuName').value.toUpperCase(),
+        gender: document.getElementById('stuGender').value,
+        shift: shift,
+        class: document.getElementById('stuClass').value,
+        phone: document.getElementById('stuPhone').value,
+        fee: document.getElementById('stuFee').value,
+        joinDate: document.getElementById('stuDate').value,
+        isEdit: isEdit,
+        rowIndex: rowIndex
+    };
+    
+    // Check for Duplicate
+    if (!isEdit) {
+        let exists = (appData.students || []).find(s => s.name === data.name && s.class === data.class && (s.shift || 'Morning') === data.shift);
+        if (exists) {
+            alert("STUDENT ALREADY EXISTS IN THIS SHIFT & CLASS!");
+            document.getElementById('modalSaveBtn').innerHTML = 'Save Profile';
+            document.getElementById('modalSaveBtn').disabled = false;
+            return;
+        }
+    }
+    
+    // Handle past paid months directly in payload
+    if (!isEdit) {
+        let noCb = document.getElementById('past_paid_no');
+        if (!noCb || !noCb.checked) {
+            let checkboxes = document.querySelectorAll('input[name="past_paid_month"]:checked');
+            if (checkboxes.length > 0) {
+                let pastPayments = [];
+                checkboxes.forEach(cb => {
+                    let m = cb.value;
+                    pastPayments.push({
+                        studentName: data.name,
+                        className: data.class,
+                        shift: data.shift,
+                        month: m,
+                        amount: data.fee,
+                        date: data.joinDate, 
+                        mode: "PRE-PAID"
+                    });
+                });
+                data.pastPayments = JSON.stringify(pastPayments);
+            }
+        }
+    }
+    
+        let result = await gasApi('saveStudent', data);
+    if(result && result.status === 'success') {
+        appData = result;
+    } else {
+        showToast('SAVE FAILED - Check Internet');
+    }
+    syncUIPanels();
+    closeModal('addModal');
+    document.getElementById('modalSaveBtn').innerHTML = 'Save Profile';
+    document.getElementById('modalSaveBtn').disabled = false;
+    showToast(isEdit ? "PROFILE UPDATED" : "STUDENT ADDED SUCCESSFULLY");
+}
+
+function checkPastDate() {
+    let dateVal = document.getElementById('stuDate').value;
+    let container = document.getElementById('pastMonthsContainer');
+    let cbContainer = document.getElementById('pastMonthsCheckboxes');
+    
+    if (!dateVal) { container.classList.add('hidden'); return; }
+    
+    let joinDate = new Date(dateVal);
+    let now = new Date();
+    let diffDays = Math.ceil((now - joinDate) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays >= 30) {
+        container.classList.remove('hidden');
+        let months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        
+        let startMonth = joinDate.getMonth();
+        let startYear = joinDate.getFullYear();
+        
+        let currentMonth = now.getMonth();
+        let currentYear = now.getFullYear();
+        
+        let html = `
+            <label class="flex items-center space-x-1 cursor-pointer mr-3">
+                <input type="checkbox" id="past_paid_no" value="NO" class="rounded text-red-600 focus:ring-red-500" onchange="togglePastPaidNo()">
+                <span class="text-[9px] font-black text-red-600 uppercase">NO</span>
+            </label>
+        `;
+        let m = startMonth;
+        let y = startYear;
+        
+        while (y < currentYear || (y === currentYear && m <= currentMonth)) {
+            let mName = months[m];
+            html += `
+            <label class="flex items-center space-x-1 cursor-pointer">
+                <input type="checkbox" name="past_paid_month" value="${mName}" class="past_paid_month_chk rounded text-purple-600 focus:ring-purple-500" onchange="togglePastPaidMonth()">
+                <span class="text-[9px] font-black text-gray-700 uppercase">${mName}</span>
+            </label>`;
+            m++;
+            if (m > 11) { m = 0; y++; }
+        }
+        cbContainer.innerHTML = html;
+    } else {
+        container.classList.add('hidden');
+    }
+}
+
+function togglePastPaidNo() {
+    let noCb = document.getElementById('past_paid_no');
+    if (noCb && noCb.checked) {
+        document.querySelectorAll('.past_paid_month_chk').forEach(cb => cb.checked = false);
+    }
+}
+
+function togglePastPaidMonth() {
+    let noCb = document.getElementById('past_paid_no');
+    if (noCb) noCb.checked = false;
+}
+
+function populateFeeStudents() {
+    let cls = document.getElementById('feeClass').value;
+    let datalist = document.getElementById('feeStudentList');
+    if(!datalist) return;
+    datalist.innerHTML = '';
+    
+    let students = (appData.students || []).filter(s => !cls || s.class === cls);
+    students.forEach(s => {
+        datalist.insertAdjacentHTML('beforeend', 
+            '<div onclick="selectFeeStudent(\'' + s.name.replace(/'/g, "\\'") + '\', \'' + (s.id || '') + '\', \'' + (s.class || '') + '\')" class="px-3 py-2 rounded-lg hover:bg-indigo-50 cursor-pointer text-xs font-bold text-gray-700 uppercase active:scale-95 transition">' + s.name + ' <span class="text-gray-400">(' + s.class + ')</span></div>');
+    });
+    if(students.length > 0) datalist.classList.remove('hidden');
+}
+
+
+var selectedFeeMonths = [];
+var currentStudentDues = null;
+
+function renderFeePendingMonthsUI(student, dues) {
+    let box = document.getElementById('feePendingMonthsBox');
+    let list = document.getElementById('feePendingMonthsList');
+    let badge = document.getElementById('feePendingTotalBadge');
+    if (!box || !list) return;
+
+    currentStudentDues = dues;
+    box.classList.remove('hidden');
+    list.innerHTML = '';
+
+    if (!dues.isOverdue || dues.pendingMonths.length === 0) {
+        badge.innerText = 'Dues: ₹0 (Cleared)';
+        badge.className = 'text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-md border border-green-200';
+        list.innerHTML = `<p class="text-[9px] font-bold text-gray-500 uppercase tracking-wider"><i class="fas fa-check-circle text-green-500 mr-1"></i> All fees cleared. Next Due Date: <span class="text-indigo-600 font-black">${dues.nextDueDate}</span></p>`;
+        
+        // Default to current month
+        let feeM = document.getElementById('feeMonth');
+        if (feeM) feeM.value = currentMonthName;
+        let feeA = document.getElementById('feeAmount');
+        if (feeA) feeA.value = student.fee || 500;
+        return;
+    }
+
+    badge.innerText = `Total Due: ₹${dues.totalPendingAmount} (${dues.pendingCount} Mo)`;
+    badge.className = 'text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-md border border-red-200';
+
+    // Select all pending months by default
+    selectedFeeMonths = [...dues.pendingMonths];
+
+    dues.pendingMonths.forEach(m => {
+        let isChecked = selectedFeeMonths.includes(m);
+        list.insertAdjacentHTML('beforeend', `
+            <label class="flex items-center space-x-1.5 bg-white border border-indigo-200 px-2.5 py-1 rounded-xl cursor-pointer shadow-sm active:scale-95 transition">
+                <input type="checkbox" value="${m}" ${isChecked ? 'checked' : ''} onchange="toggleFeeMonthSelect('${m}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                <span class="text-[9px] font-black text-gray-800 uppercase">${m} (₹${student.fee || 500})</span>
+            </label>
+        `);
+    });
+
+    updateFeeFormFromSelectedMonths(student);
+}
+
+function toggleFeeMonthSelect(month) {
+    let studentName = document.getElementById('feeStudentSearch').value;
+    let student = (appData.students || []).find(s => s.name === studentName);
+    if (!student) return;
+
+    if (selectedFeeMonths.includes(month)) {
+        selectedFeeMonths = selectedFeeMonths.filter(m => m !== month);
+    } else {
+        selectedFeeMonths.push(month);
+    }
+
+    updateFeeFormFromSelectedMonths(student);
+}
+
+function updateFeeFormFromSelectedMonths(student) {
+    let studentFee = Number(student.fee) || 500;
+    let totalAmt = selectedFeeMonths.length * studentFee;
+
+    let feeA = document.getElementById('feeAmount');
+    if (feeA) feeA.value = totalAmt > 0 ? totalAmt : studentFee;
+
+    let feeM = document.getElementById('feeMonth');
+    if (feeM) {
+        let monthsStr = selectedFeeMonths.length > 0 ? selectedFeeMonths.join(', ') : currentMonthName;
+        // Check if option exists, if not add it dynamically
+        let existingOpt = Array.from(feeM.options).find(opt => opt.value === monthsStr);
+        if (!existingOpt) {
+            let newOpt = document.createElement('option');
+            newOpt.value = monthsStr;
+            newOpt.innerText = monthsStr.toUpperCase();
+            feeM.insertBefore(newOpt, feeM.firstChild);
+        }
+        feeM.value = monthsStr;
+    }
+}
+
+function selectFeeStudent(name, id, cls) {
+    document.getElementById('feeStudentSearch').value = name;
+    document.getElementById('feeStudentId').value = id;
+    if(cls && !document.getElementById('feeClass').value) {
+        document.getElementById('feeClass').value = cls;
+    }
+    document.getElementById('feeStudentList').classList.add('hidden');
+    
+    let student = (appData.students || []).find(s => s.name === name);
+    if(student) {
+        currentStudentExpectedFee = parseInt(student.fee) || 0;
+        let dues = calculateStudentDues(student, appData.payments);
+        renderFeePendingMonthsUI(student, dues);
+    }
+}
+
+
+function filterFeeStudents() {
+    let search = document.getElementById('feeStudentSearch').value.toUpperCase();
+    let cls = document.getElementById('feeClass').value;
+    let datalist = document.getElementById('feeStudentList');
+    if(!datalist) return;
+    datalist.innerHTML = '';
+    
+    if(!search || search.length < 1) { datalist.classList.add('hidden'); return; }
+    
+    let students = (appData.students || []).filter(s => {
+        let matchClass = !cls || s.class === cls;
+        let matchName = s.name.toUpperCase().includes(search);
+        return matchClass && matchName;
+    });
+    
+    students.forEach(s => {
+        datalist.insertAdjacentHTML('beforeend',
+            '<div onclick="selectFeeStudent(\'' + s.name.replace(/'/g, "\\'") + '\', \'' + (s.id || '') + '\', \'' + (s.class || '') + '\')" class="px-3 py-2 rounded-lg hover:bg-indigo-50 cursor-pointer text-xs font-bold text-gray-700 uppercase active:scale-95 transition">' + s.name + ' <span class="text-gray-400">(' + s.class + ')</span></div>');
+    });
+    
+    if(students.length > 0) datalist.classList.remove('hidden');
+    else datalist.classList.add('hidden');
+}
+
+async function processFee(e) {
+    if(e) e.preventDefault();
+    let shiftElem = document.getElementById('feeShift'); let shift = shiftElem ? shiftElem.value : 'Morning';
+    let cls = document.getElementById('feeClass').value;
+    let stu = document.getElementById('feeStudentSearch').value;
+    let month = document.getElementById('feeMonth').value;
+    let amt = document.getElementById('feeAmount').value;
+    let date = document.getElementById('feeDate').value;
+    let mode = document.getElementById('feeMode').value;
+    
+    if(!stu || !month || !amt || !date || !mode) {
+        showToast("ALL FIELDS REQUIRED (INCLUDING MODE)");
+        return;
+    }
+    
+    let btn = document.querySelector('form#feeForm button[type="submit"]');
+    let orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> PROCESSING...';
+    btn.disabled = true;
+    
+    // Find the student to get their ID and phone
+    let matchedStudent = (appData.students || []).find(s => s.name === stu && (!cls || s.class === cls));
+    let payload = {
+        id: generateId('TXN'),
+        studentId: matchedStudent ? matchedStudent.id : '',
+        studentName: stu,
+        className: matchedStudent ? matchedStudent.class : cls,
+        phone: matchedStudent ? matchedStudent.phone : '',
+        amount: amt,
+        month: month,
+        date: date,
+        mode: mode
+    };
+    
+    appData = await gasApi('savePayment', payload);
+    
+    // Direct WhatsApp Receipt Dispatch
+    if (matchedStudent && matchedStudent.phone) {
+        sendSuccessMsg(stu, matchedStudent.phone, amt, month, mode);
+    }
+    
+    document.getElementById('feeStudentSearch').value = '';
+    document.getElementById('feeAmount').value = '';
+    
+    syncUIPanels();
+    
+    btn.innerHTML = orig;
+    btn.disabled = false;
+    showToast("PAYMENT SUCCESS");
+}
+
+function autoFillSetupFee() {
+    let shift = document.getElementById('stuShift') ? document.getElementById('stuShift').value : 'Morning';
+    let clsElem = document.getElementById('stuClass');
+    if(!clsElem) return;
+    let cls = clsElem.value;
+    if(appData.feeSettings) {
+        let key = shift + " - " + cls;
+        if(appData.feeSettings[key]) {
+            document.getElementById('stuFee').value = appData.feeSettings[key];
+        }
+    }
+}
+
+function autoGuessGender() {
+    let nameElem = document.getElementById('stuName');
+    if(!nameElem) return;
+    let name = nameElem.value.trim().toLowerCase();
+    if(name.length < 3) return;
+    let genderSel = document.getElementById('stuGender');
+    if(!genderSel) return;
+    if(name.startsWith('mr ') || name.startsWith('mr. ')) { genderSel.value = 'Male'; return; }
+    if(name.startsWith('ms ') || name.startsWith('miss ') || name.startsWith('mrs ')) { genderSel.value = 'Female'; return; }
+    let lastChar = name.charAt(name.length-1);
+    if(lastChar === 'i' || lastChar === 'a') genderSel.value = 'Female';
+    else genderSel.value = 'Male';
+}
+
+function calculateRemaining() {
+    let amtStr = document.getElementById('feeAmount').value;
+    let remBox = document.getElementById('feeRemainingBox');
+    if(!remBox) return;
+    if(!amtStr) { remBox.classList.add('hidden'); return; }
+    
+    let amt = parseInt(amtStr) || 0;
+    let shiftElem = document.getElementById('feeShift'); let shift = shiftElem ? shiftElem.value : 'Morning';
+    let cls = document.getElementById('feeClass').value;
+    let actualFee = appData.feeSettings ? parseInt(appData.feeSettings[shift + " - " + cls]) || 0 : 0;
+    
+    if(actualFee > 0 && amt < actualFee) {
+        remBox.classList.remove('hidden');
+        remBox.innerHTML = `<span class="text-[9px] font-black uppercase tracking-widest bg-red-50 text-red-600 px-2 py-1 rounded">DUE: ₹${actualFee - amt}</span>`;
+    } else {
+        remBox.classList.add('hidden');
+    }
+}
+
+async function sendAiCommand(e) {
+    let val = '';
+    if(typeof e === 'string') {
+        val = e;
+    } else {
+        if(e && e.preventDefault) e.preventDefault();
+        let inp = document.getElementById('ai-input') || document.getElementById('aiInput');
+        val = inp ? inp.value : '';
+    }
+    
+    if(!val) return;
+    
+    let box = document.getElementById('ai-chat-history') || document.getElementById('aiResponseBox');
+    if(!box) return;
+    box.classList.remove('hidden');
+    box.innerHTML = '<i class="fas fa-spinner fa-spin text-purple-600"></i> Processing command...';
+    
+    let res = await gasApi('processAiCommand', {prompt: val, context: {students: appData.students, paidCount: appData.paidCount}});
+    if(res && res.status === 'success') {
+        let aiMsg = (res.result && res.result.message) ? res.result.message : (res.message || 'No response');
+        box.innerHTML = '<div class="glass-panel p-4 rounded-24 rounded-tl-none border-l-4 border-purple-500 shadow-sm"><p class="text-xs font-bold text-gray-700">' + aiMsg.replace(/\n/g, '<br>') + '</p></div>';
+        let inp = document.getElementById('ai-input');
+        if (inp) inp.value = '';
+        syncUIPanels();
+    } else {
+        box.innerHTML = '<span class="text-red-500">Failed to process command.</span>';
+    }
+}
+
+async function triggerPtmNoteGeneration() {
+    showToast("Generating PTM Note using AI...");
+    let res = await gasApi('processAiCommand', {prompt: "Generate PTM Note for all defaults", context: {students: appData.students, paidCount: appData.paidCount}});
+    if(res && res.status === 'success') {
+        let aiMsg = (res.result && res.result.message) ? res.result.message : (res.message || 'No response');
+        let box = document.getElementById('ai-chat-history') || document.getElementById('aiResponseBox');
+        if(box) {
+            box.classList.remove('hidden');
+            box.innerHTML = '<div class="glass-panel p-4 rounded-24 rounded-tl-none border-l-4 border-purple-500 shadow-sm"><p class="text-xs font-bold text-gray-700">' + aiMsg.replace(/\n/g, '<br>') + '</p></div>';
+        } else {
+            alert(res.message);
+        }
+    } else {
+        showToast("AI Generation Failed.");
+    }
+}
+
+
+function renderStudents() {
+    let list = document.getElementById('students-list');
+    if(!list) return;
+    list.innerHTML = '';
+    
+    let shift = document.getElementById('dirShift') ? document.getElementById('dirShift').value : 'All';
+    let cls = document.getElementById('dirClass') ? document.getElementById('dirClass').value : 'All';
+    let search = document.getElementById('searchInput') ? document.getElementById('searchInput').value.toUpperCase() : '';
+    
+    let students = (appData.students || []).filter(s => {
+        let matchShift = shift === 'All' || (s.shift || 'Morning') === shift;
+        let matchClass = cls === 'All' || s.class === cls;
+        let matchSearch = !search || 
+            (s.name && s.name.toString().toUpperCase().includes(search)) || 
+            (s.phone && s.phone.toString().includes(search));
+        return matchShift && matchClass && matchSearch;
+    });
+    
+    if(students.length === 0) {
+        list.innerHTML = '<div class="glass-panel p-6 rounded-24 text-center"><p class="text-10 font-black text-gray-400 uppercase tracking-widest">NO STUDENTS FOUND</p></div>';
+        return;
+    }
+    
+    // When 'All Classes' is selected, group students class-by-class!
+    if (cls === 'All') {
+        let classMap = {};
+        students.forEach(s => {
+            let cName = s.class || 'Other';
+            if (!classMap[cName]) classMap[cName] = [];
+            classMap[cName].push(s);
+        });
+        
+        let sortedClasses = Object.keys(classMap).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+        
+        sortedClasses.forEach(cName => {
+            let classStudents = classMap[cName];
+            list.insertAdjacentHTML('beforeend', `
+                <div class="flex items-center justify-between mt-4 mb-2 px-1">
+                    <span class="text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-xl uppercase tracking-wider flex items-center shadow-sm">
+                        <i class="fas fa-graduation-cap mr-1.5 text-indigo-500"></i> CLASS ${cName}
+                    </span>
+                    <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                        ${classStudents.length} ${classStudents.length === 1 ? 'Student' : 'Students'}
+                    </span>
+                </div>
+            `);
+            
+            classStudents.forEach(s => {
+                let realIndex = (appData.students || []).indexOf(s);
+                let dues = calculateStudentDues(s, appData.payments);
+                let badge = !dues.isOverdue 
+                    ? '<span class="text-[8px] font-black bg-green-100 text-green-600 px-2 py-0.5 rounded-md uppercase">PAID</span>' 
+                    : `<span class="text-[8px] font-black bg-red-100 text-red-500 px-2 py-0.5 rounded-md uppercase">DUE ₹${dues.totalPendingAmount}</span>`;
+                
+                list.insertAdjacentHTML('beforeend', `
+                    <div onclick="editStudent(${realIndex})" class="glass-panel p-4 rounded-24 flex justify-between items-center cursor-pointer active:scale-[0.98] transition mb-2 shadow-sm">
+                        <div>
+                            <p class="font-black text-gray-800 text-xs force-uppercase truncate" style="max-width:160px">${s.name}</p>
+                            <p class="text-8 font-bold text-gray-400 mt-0.5 tracking-widest">${s.class} • ${(s.shift||'Morning').toUpperCase()} • ${s.phone || 'No Phone'}</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            ${badge}
+                            <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                        </div>
+                    </div>
+                `);
+            });
+        });
+    } else {
+        // When a single specific class is chosen
+        students.forEach((s) => {
+            let realIndex = (appData.students || []).indexOf(s);
+            let dues = calculateStudentDues(s, appData.payments);
+            let badge = !dues.isOverdue 
+                ? '<span class="text-[8px] font-black bg-green-100 text-green-600 px-2 py-0.5 rounded-md uppercase">PAID</span>' 
+                : `<span class="text-[8px] font-black bg-red-100 text-red-500 px-2 py-0.5 rounded-md uppercase">DUE ₹${dues.totalPendingAmount}</span>`;
+            
+            list.insertAdjacentHTML('beforeend', `
+                <div onclick="editStudent(${realIndex})" class="glass-panel p-4 rounded-24 flex justify-between items-center cursor-pointer active:scale-[0.98] transition mb-2 shadow-sm">
+                    <div>
+                        <p class="font-black text-gray-800 text-xs force-uppercase truncate" style="max-width:160px">${s.name}</p>
+                        <p class="text-8 font-bold text-gray-400 mt-0.5 tracking-widest">${s.class} • ${(s.shift||'Morning').toUpperCase()} • ${s.phone || 'No Phone'}</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        ${badge}
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </div>
+                </div>
+            `);
+        });
+    }
+}
+
+function openFeeForStudent(name, id, cls) {
+    navigate('fee');
+    setTimeout(() => {
+        selectFeeStudent(name, id, cls);
+    }, 150);
+}
+
+function renderDefaulters() {
+    let list = document.getElementById('defaulters-list');
+    if(!list) return;
+    list.innerHTML = '';
+    
+    let allDefaulters = [];
+    (appData.students || []).forEach(s => {
+        let dues = calculateStudentDues(s, appData.payments);
+        if (dues.isOverdue) {
+            allDefaulters.push({ student: s, dues: dues });
+        }
+    });
+    
+    let pendEl = document.getElementById('dash-pend');
+    if (pendEl) {
+        pendEl.innerHTML = allDefaulters.length + ' <span class="text-xs text-gray-400 font-bold ml-1">Students</span>';
+    }
+
+    let shiftFilter = 'All';
+    let shiftEl = document.getElementById('defaultersShift');
+    if (shiftEl) {
+        shiftFilter = shiftEl.value || 'All';
+    }
+
+    let defaulters = allDefaulters.filter(item => {
+        if (shiftFilter === 'All') return true;
+        let sShift = (item.student.shift || 'Morning').toLowerCase();
+        return sShift === shiftFilter.toLowerCase();
+    });
+    
+    let subTitle = document.getElementById('defaulters-subtitle');
+    if (subTitle) {
+        subTitle.innerText = shiftFilter === 'All' 
+            ? `>>30 DAYS UNPAID (${defaulters.length})` 
+            : `>>30 DAYS UNPAID • ${shiftFilter.toUpperCase()} (${defaulters.length})`;
+    }
+    
+    if(defaulters.length === 0) {
+        let msg = shiftFilter === 'All' 
+            ? 'ALL FEES CLEARED! 🎉' 
+            : `NO PENDING DUES FOR ${shiftFilter.toUpperCase()} SHIFT! 🎉`;
+        list.innerHTML = `<div class="glass-panel p-6 rounded-24 text-center"><p class="text-10 font-black text-gray-400 uppercase tracking-widest">${msg}</p></div>`;
+        return;
+    }
+    
+    defaulters.forEach(({ student: s, dues }) => {
+        let realIndex = (appData.students || []).indexOf(s);
+        let monthsBadge = dues.pendingCount === 1 
+            ? `<span class="bg-red-50 text-red-600 border border-red-100 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">${dues.pendingMonths[0]}</span>`
+            : `<span class="bg-red-50 text-red-600 border border-red-100 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">${dues.pendingCount} Months: ${dues.pendingMonths.join(', ')}</span>`;
+
+        list.innerHTML += `<div class="glass-panel p-4 rounded-24 flex justify-between items-center mb-3">
+            <div>
+                <div class="flex items-center space-x-1.5 mb-1 flex-wrap gap-y-1">
+                    <p class="font-black text-gray-800 text-xs force-uppercase truncate" style="max-width:130px">${s.name}</p>
+                    ${monthsBadge}
+                </div>
+                <p class="text-8 font-bold text-gray-400 tracking-widest">${s.class} • ${(s.shift||'Morning').toUpperCase()} • <span class="text-red-500 font-black">₹${dues.totalPendingAmount} Due</span></p>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="sendSoftReminder(${realIndex})" class="bg-yellow-50 text-yellow-600 px-3 py-2 rounded-xl text-[9px] font-black uppercase border border-yellow-200 active:scale-95 transition shadow-sm">
+                    <i class="fas fa-bell mr-1"></i> Remind
+                </button>
+                <button onclick="openFeeForStudent('${s.name.replace(/'/g, "\\'")}', '${s.id || ''}', '${s.class || ''}')" class="bg-green-50 text-green-600 px-3 py-2 rounded-xl text-[9px] font-black uppercase border border-green-200 active:scale-95 transition shadow-sm">
+                    <i class="fas fa-rupee-sign mr-1"></i> Pay
+                </button>
+            </div>
+        </div>`;
+    });
+}
+
+function renderPaidStudents() {
+    let list = document.getElementById('paid-students-list');
+    if(!list) return;
+    list.innerHTML = '';
+    
+    let paidStudents = (appData.students || []).filter(s => {
+        return (appData.payments || []).some(p => {
+            let matchName = (p.studentName || '').trim().toUpperCase() === (s.name || '').trim().toUpperCase();
+            let matchClass = !s.class || !p.className || (p.className || '').trim() === (s.class || '').trim();
+            let pMonths = (p.month || '').split(/[,&+]| and /i).map(m => m.trim().toLowerCase());
+            let matchMonth = pMonths.includes(targetFeeMonth.toLowerCase());
+            let matchYear = new Date(p.date).getFullYear() === new Date().getFullYear();
+            return matchName && matchClass && matchMonth && matchYear;
+        });
+    });
+    
+    appData.paidCount = paidStudents.length;
+    
+    if(paidStudents.length === 0) {
+        list.innerHTML = '<div class="glass-panel p-6 rounded-24 text-center"><p class="text-10 font-black text-gray-400 uppercase tracking-widest">NO PAYMENTS THIS MONTH</p></div>';
+        return;
+    }
+    
+    paidStudents.forEach(s => {
+        let payment = (appData.payments || []).find(p => {
+            let matchName = (p.studentName || '').trim().toUpperCase() === (s.name || '').trim().toUpperCase();
+            let matchClass = !s.class || !p.className || (p.className || '').trim() === (s.class || '').trim();
+            let pMonths = (p.month || '').split(/[,&+]| and /i).map(m => m.trim().toLowerCase());
+            return matchName && matchClass && pMonths.includes(targetFeeMonth.toLowerCase());
+        });
+        list.innerHTML += `<div class="glass-panel p-4 rounded-24 flex justify-between items-center mb-3">
+            <div>
+                <p class="font-black text-gray-800 text-xs force-uppercase truncate" style="max-width:160px">${s.name}</p>
+                <p class="text-8 font-bold text-gray-400 mt-0.5 tracking-widest">${s.class} • ${(s.shift||'Morning').toUpperCase()} • <span class="text-green-600 font-bold">${payment ? payment.month : targetFeeMonth}</span></p>
+            </div>
+            <div class="text-right">
+                <p class="font-black text-green-600 text-sm">₹${payment ? payment.amount : '0'}</p>
+                <p class="text-8 font-bold text-gray-400 mt-0.5">${payment ? (payment.mode||'CASH') : ''}</p>
+            </div>
+        </div>`;
+    });
+}
+
+function initFeeClasses() {
+    let feeClass = document.getElementById('feeClass');
+    if(!feeClass) return;
+    feeClass.innerHTML = '<option value="">-- ALL CLASSES --</option>';
+    
+    let added = new Set();
+    if (appData.feeSettings) {
+        Object.keys(appData.feeSettings).forEach(k => {
+            let parts = k.split(' - ');
+            if(parts.length === 2) {
+                let cls = parts[1];
+                if(!added.has(cls)) {
+                    added.add(cls);
+                    feeClass.insertAdjacentHTML('beforeend', '<option value="' + cls + '">' + cls + '</option>');
+                }
+            }
+        });
+    }
+    
+    // Also add classes from students that might not be in feeSettings
+    (appData.students || []).forEach(s => {
+        if(s.class && !added.has(s.class)) {
+            added.add(s.class);
+            feeClass.insertAdjacentHTML('beforeend', '<option value="' + s.class + '">' + s.class + '</option>');
+        }
+    });
+}
+
+function sendWaMessage(phone, msg) {
+    if(!appData.waSettings || !appData.waSettings.instanceId || !appData.waSettings.token) return;
+    gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
+}
+
+function validatePhone(input) {
+    input.value = input.value.replace(/[^0-9]/g, '');
+    if(input.value.length > 10) input.value = input.value.slice(0, 10);
+}
