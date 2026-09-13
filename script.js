@@ -901,21 +901,24 @@ Warm Regards,
             let headerTitle = document.getElementById('headerTitle');
             let headerSub = document.getElementById('headerSub');
             let headerBadge = document.getElementById('headerBadge');
+            let headerLogo = document.getElementById('headerLogo');
             
             if (id === 'attendance') {
-                header.classList.remove('p-4', 'mb-2');
+                header.classList.remove('p-3.5', 'mb-2');
                 header.classList.add('p-2', 'mb-1', 'justify-center');
-                headerTitle.classList.remove('text-xl', 'text-left');
+                headerTitle.classList.remove('text-lg', 'text-left');
                 headerTitle.classList.add('text-sm', 'text-center');
                 if(headerSub) headerSub.classList.add('hidden');
                 if(headerBadge) headerBadge.classList.add('hidden');
+                if(headerLogo) headerLogo.classList.add('hidden');
             } else {
-                header.classList.add('p-4', 'mb-2');
+                header.classList.add('p-3.5', 'mb-2');
                 header.classList.remove('p-2', 'mb-1', 'justify-center');
-                headerTitle.classList.add('text-xl', 'text-left');
+                headerTitle.classList.add('text-lg', 'text-left');
                 headerTitle.classList.remove('text-sm', 'text-center');
                 if(headerSub) headerSub.classList.remove('hidden');
                 if(headerBadge) headerBadge.classList.remove('hidden');
+                if(headerLogo) headerLogo.classList.remove('hidden');
             }
             
             if(id === 'attendance') { 

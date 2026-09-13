@@ -1,9 +1,12 @@
-const CACHE_NAME = 'vseh-pro-cache-v10';
+const CACHE_NAME = 'vseh-pro-cache-v11';
 const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
-  './logo.jpeg'
+  './logo.jpeg',
+  './logo-192.png',
+  './logo-512.png',
+  './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', event => {
