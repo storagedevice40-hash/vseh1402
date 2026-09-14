@@ -21,7 +21,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
     
-    <link rel="stylesheet" href="./style.css?v=2.6">
+    <link rel="stylesheet" href="./style.css?v=3.5">
 </head>
 <body class="flex flex-col h-screen overflow-hidden w-full max-w-500 relative transition-colors duration-300">
 
@@ -178,40 +178,63 @@
                 <span class="text-10 font-black text-white bg-purple-600 px-2.5 py-1 rounded-lg uppercase shadow-md"><i class="fas fa-brain mr-1"></i> Gemini Active</span>
             </div>
             
-            <div class="ai-tools-scroll mb-4 pb-2">
-                <button onclick="sendAiCommand('Show my daily todo list for today.')" class="ai-chip text-9 bg-purple-50 text-purple-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-purple-200 snap-center"><i class="fas fa-list-check mr-2"></i> Daily To-Do</button>
-                <button onclick="sendAiCommand('Generate a 20 marks test paper for Physics.')" class="ai-chip text-9 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-indigo-200 snap-center"><i class="fas fa-file-signature mr-2"></i> Create Test</button>
-                <button onclick="sendAiCommand('Draft a polite reply to a parent asking for fee extension.')" class="ai-chip text-9 bg-pink-50 text-pink-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-pink-200 snap-center"><i class="fas fa-comments mr-2"></i> Parent Reply</button>
-                <button onclick="sendAiCommand('Analyze revenue projection for the next 30 days based on payments.')" class="ai-chip text-9 bg-green-50 text-green-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-green-200 snap-center"><i class="fas fa-chart-line mr-2"></i> Rev Forecast</button>
-                <button onclick="sendAiCommand('Provide a syllabus pace alert. Are we lagging?')" class="ai-chip text-9 bg-red-50 text-red-600 px-4 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-red-200 snap-center"><i class="fas fa-triangle-exclamation mr-2"></i> Syllabus Alert</button>
+            <div class="ai-tools-scroll mb-3 pb-1 flex space-x-2 overflow-x-auto no-scrollbar">
+                <button onclick="let inp=document.getElementById('ai-input'); inp.value='Send to all: '; inp.focus();" class="ai-chip text-9 bg-yellow-50 text-yellow-700 px-3.5 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-yellow-200 snap-center whitespace-nowrap"><i class="fas fa-bullhorn mr-1.5 text-yellow-600"></i> Broadcast Notice</button>
+                <button onclick="sendAiCommand('Defaulters list')" class="ai-chip text-9 bg-red-50 text-red-600 px-3.5 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-red-200 snap-center whitespace-nowrap"><i class="fas fa-clock mr-1.5"></i> Defaulters List</button>
+                <button onclick="sendAiCommand('Generate PTM Note')" class="ai-chip text-9 bg-purple-50 text-purple-600 px-3.5 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-purple-200 snap-center whitespace-nowrap"><i class="fas fa-envelope-open-text mr-1.5"></i> PTM Note</button>
+                <button onclick="sendAiCommand('Collection summary')" class="ai-chip text-9 bg-green-50 text-green-600 px-3.5 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-green-200 snap-center whitespace-nowrap"><i class="fas fa-chart-pie mr-1.5"></i> Fee Summary</button>
+                <button onclick="sendAiCommand('Show my daily todo list for today.')" class="ai-chip text-9 bg-indigo-50 text-indigo-600 px-3.5 py-2 rounded-xl font-black uppercase active:scale-95 transition border border-indigo-200 snap-center whitespace-nowrap"><i class="fas fa-list-check mr-1.5"></i> Daily To-Do</button>
             </div>
 
-            <div id="ai-chat-history" class="space-y-4 mb-20 overflow-y-auto" style="height: 48vh;">
+            <div id="ai-chat-history" class="space-y-4 overflow-y-auto" style="height: calc(100vh - 280px); padding-bottom: 95px;">
                 <div class="glass-panel p-4 rounded-24 rounded-tl-none border-l-4 border-purple-500 shadow-sm">
-                    <p class="text-xs font-bold text-gray-700 dark:text-gray-200">Hello Vijay Sir! Main aapka autonomous AI Assistant hoon. Upar diye gaye kisi bhi smart tool par click karein ya apna command type karein.</p>
+                    <p class="text-xs font-bold text-gray-700 dark:text-gray-200">Hello Vijay Sir! 🌟 Main aapka autonomous AI Assistant hoon.<br><br>• 📢 <b>Broadcast:</b> <i>"Send to all: Kal 9 baje test hoga"</i><br>• 📝 <b>Class Message:</b> <i>"Send to class 10th: Science test tomorrow"</i><br>• 📋 <b>Defaulters:</b> <i>"Defaulters list dikhao"</i><br>• 🗓 <b>Attendance:</b> <i>"Mark Class 10th Present"</i></p>
                 </div>
             </div>
 
-            <div class="fixed bottom-20 left-4 right-4 max-w-500 mx-auto z-30 pb-2">
-                <div class="glass-panel rounded-full p-1.5 flex items-center shadow-xl border border-gray-200 dark:border-gray-700">
-                    <button onclick="simulateAudioInput()" class="w-10 h-10 text-gray-400 hover:text-purple-600 flex items-center justify-center transition"><i class="fas fa-microphone"></i></button>
-                    <input type="text" id="ai-input" placeholder="Type command..." class="flex-1 bg-transparent border-none outline-none px-2 text-sm font-bold text-gray-700 dark:text-gray-200" onkeypress="if(event.key === 'Enter') sendAiCommand(this.value)">
-                    <button onclick="sendAiCommand(document.getElementById('ai-input').value)" class="w-10 h-10 bg-purple-600 text-white rounded-full flex items-center justify-center active:scale-90 transition shadow-md"><i class="fas fa-paper-plane"></i></button>
+            <!-- Elevated Mobile-Optimized Input Bar (Comfortable above Bottom Nav, Zero Overlap) -->
+            <div class="fixed left-3 right-3 max-w-500 mx-auto z-30" style="bottom: calc(76px + env(safe-area-inset-bottom, 0px));">
+                <div class="glass-panel rounded-full p-2 flex items-center shadow-2xl border border-purple-200 dark:border-gray-700 bg-white/95 backdrop-blur-md">
+                    <button type="button" onclick="simulateAudioInput()" class="w-10 h-10 text-purple-400 hover:text-purple-600 flex items-center justify-center transition shrink-0"><i class="fas fa-microphone"></i></button>
+                    <input type="text" id="ai-input" placeholder="Type command (e.g. Send to all: ...)" class="flex-1 bg-transparent border-none outline-none px-2 text-xs font-bold text-gray-800 dark:text-gray-100 placeholder-gray-400" onkeypress="if(event.key === 'Enter') sendAiCommand(this.value)">
+                    <button type="button" onclick="sendAiCommand(document.getElementById('ai-input').value)" class="w-10 h-10 bg-purple-600 text-white rounded-full flex items-center justify-center active:scale-90 transition shadow-lg shrink-0"><i class="fas fa-paper-plane text-xs"></i></button>
                 </div>
             </div>
         </section>
 
         <section id="students" class="view-section">
-            <div class="flex justify-between items-end mb-6 px-1">
+            <div class="flex justify-between items-end mb-4 px-1">
                 <div>
-                    <h2 class="text-2xl font-black text-gray-800 tracking-tight">Directory</h2>
-                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">All Students</p>
+                    <h2 class="text-2xl font-black text-gray-800 dark:text-gray-100 tracking-tight">Directory</h2>
+                    <p class="text-10 font-black text-gray-400 uppercase tracking-widest mt-1">Directory • <span id="dir-header-count" class="text-indigo-600 dark:text-indigo-400 font-black">0</span> Enrolled</p>
                 </div>
                 <div class="flex items-center space-x-2">
                     <button onclick="generateStudentsPDF()" class="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 px-4 py-3 rounded-2xl font-black text-xs shadow-sm active:scale-95 transition flex items-center border border-gray-200 dark:border-slate-700 uppercase tracking-wider">
                         <i class="fas fa-file-pdf mr-2 text-red-500 text-sm"></i> Get PDF
                     </button>
                     <button onclick="openModal('addModal')" class="bg-indigo-600 text-white px-4 py-3 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition flex items-center uppercase tracking-wider"><i class="fas fa-user-plus mr-2"></i> ADD</button>
+                </div>
+            </div>
+
+            <!-- Micro Student Stats Summary Bar (All, Morning, Evening Counts) -->
+            <div class="grid grid-cols-3 gap-2 mb-4 px-0.5">
+                <div id="badge-shift-all" onclick="setDirShiftFilter('All')" class="cursor-pointer glass-panel p-2 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/70 dark:bg-indigo-950/30 flex flex-col items-center justify-center text-center transition active:scale-95 shadow-sm hover:border-indigo-400 ring-2 ring-indigo-500">
+                    <span class="text-[9px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-wider flex items-center">
+                        <i class="fas fa-users mr-1 text-[9px]"></i> ALL
+                    </span>
+                    <span id="dir-count-all" class="text-base font-black text-indigo-700 dark:text-indigo-200 mt-0.5 leading-none">0</span>
+                </div>
+                <div id="badge-shift-morning" onclick="setDirShiftFilter('Morning')" class="cursor-pointer glass-panel p-2 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/30 flex flex-col items-center justify-center text-center transition active:scale-95 shadow-sm hover:border-amber-400">
+                    <span class="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center">
+                        <i class="fas fa-sun mr-1 text-[9px]"></i> MORNING
+                    </span>
+                    <span id="dir-count-morning" class="text-base font-black text-amber-700 dark:text-amber-200 mt-0.5 leading-none">0</span>
+                </div>
+                <div id="badge-shift-evening" onclick="setDirShiftFilter('Evening')" class="cursor-pointer glass-panel p-2 rounded-2xl border border-purple-200 dark:border-purple-900/50 bg-purple-50/70 dark:bg-purple-950/30 flex flex-col items-center justify-center text-center transition active:scale-95 shadow-sm hover:border-purple-400">
+                    <span class="text-[9px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center">
+                        <i class="fas fa-moon mr-1 text-[9px]"></i> EVENING
+                    </span>
+                    <span id="dir-count-evening" class="text-base font-black text-purple-700 dark:text-purple-200 mt-0.5 leading-none">0</span>
                 </div>
             </div>
             
@@ -341,7 +364,24 @@
                         </div>
                     </div>
                     
-                    <button type="submit" class="w-full bg-green-600 text-white py-4 rounded-xl font-black text-sm mt-6 shadow-lg active:scale-95 transition uppercase tracking-widest flex items-center justify-center">
+                    <!-- NIGHT MODE / QUIET HOURS NOTICE & INSTANT SEND OVERRIDE -->
+                    <div id="feeNightNotice" class="hidden p-3.5 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 transition-all shadow-sm">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <span class="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 text-xs shadow-sm"><i class="fas fa-moon"></i></span>
+                                <div>
+                                    <p class="text-[11px] font-black text-amber-900 dark:text-amber-200 uppercase tracking-tight">🌙 Quiet Hours Active (Night)</p>
+                                    <p class="text-[9px] font-bold text-amber-700 dark:text-amber-300">Receipt will auto-send tomorrow at 8:00 AM (No app opening needed)</p>
+                                </div>
+                            </div>
+                            <label class="inline-flex items-center space-x-1.5 cursor-pointer shrink-0 ml-2 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-amber-200 dark:border-amber-700 shadow-sm">
+                                <input type="checkbox" id="feeForceSendNow" class="rounded text-amber-600 focus:ring-0">
+                                <span class="text-[9px] font-black text-amber-900 dark:text-amber-200 uppercase tracking-wider">Send Now</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="feeSubmitBtn" class="w-full bg-green-600 text-white py-4 rounded-xl font-black text-sm mt-6 shadow-lg active:scale-95 transition uppercase tracking-widest flex items-center justify-center">
                         SAVE & AUTO DISPATCH <i class="fas fa-robot ml-2 text-lg"></i>
                     </button>
                 </form>
@@ -383,6 +423,22 @@
                         <div class="text-left"><h3 class="text-sm font-black text-gray-800 uppercase tracking-widest">Evening Shift</h3><p class="text-[10px] text-gray-400 font-bold uppercase mt-1">Manage Classes & Fees</p></div>
                     </div>
                     <i class="fas fa-chevron-right text-gray-300"></i>
+                </button>
+
+                <button onclick="openTestSettings()" class="w-full glass-panel rounded-32 p-6 flex justify-between items-center active:scale-95 transition-transform border border-purple-200 shadow-sm">
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center text-xl mr-4 shadow-inner"><i class="fas fa-file-pen"></i></div>
+                        <div class="text-left"><h3 class="text-sm font-black text-gray-800 uppercase tracking-widest">Test & Exam Marks 📝</h3><p class="text-[10px] text-purple-600 font-bold uppercase mt-1">Record Marks & Alert Parents</p></div>
+                    </div>
+                    <i class="fas fa-chevron-right text-purple-400"></i>
+                </button>
+
+                <button onclick="openThemeSettings()" class="w-full glass-panel rounded-32 p-6 flex justify-between items-center active:scale-95 transition-transform border border-pink-200 shadow-sm">
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-pink-500 to-indigo-500 text-white flex items-center justify-center text-xl mr-4 shadow-md"><i class="fas fa-palette"></i></div>
+                        <div class="text-left"><h3 class="text-sm font-black text-gray-800 uppercase tracking-widest">App Themes & Visuals 🎨</h3><p class="text-[10px] text-pink-600 font-bold uppercase mt-1">10 Ultra Futuristic & Luxury Themes</p></div>
+                    </div>
+                    <i class="fas fa-chevron-right text-pink-400"></i>
                 </button>
 
                 <!-- WHATSAPP SETTINGS (Always visible on main menu) -->
@@ -442,10 +498,151 @@
                     </div>
                 </form>
             </div>
+
+            <!-- SUB-MENU FOR TEST & EXAM MARKS -->
+            <div id="settingsTestMenu" class="hidden">
+                <!-- Back Button & Header -->
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-3">
+                        <button type="button" onclick="closeTestSettings()" class="w-10 h-10 bg-white text-gray-700 rounded-full flex items-center justify-center active:scale-90 transition shadow-sm border border-gray-200">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        <div>
+                            <h3 class="text-sm font-black text-gray-800 uppercase tracking-widest">Test & Marks Hub</h3>
+                            <p class="text-[9px] font-bold text-purple-600 uppercase tracking-wider">Exam Results & Absence Alert</p>
+                        </div>
+                    </div>
+                    <span class="text-[9px] font-black bg-purple-100 text-purple-700 px-2.5 py-1 rounded-lg uppercase tracking-widest">
+                        <i class="fas fa-award mr-1"></i> Exam Center
+                    </span>
+                </div>
+
+                <!-- Test Configuration Card -->
+                <div class="glass-panel rounded-32 p-5 mb-4 shadow-sm">
+                    <h4 class="text-[10px] font-black text-purple-700 uppercase tracking-widest mb-3 border-b border-gray-100 pb-1.5 flex items-center justify-between">
+                        <span><i class="fas fa-sliders-h mr-1"></i> Test Parameters</span>
+                        <span id="testStudentCountBadge" class="text-[8px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded font-black">0 Students</span>
+                    </h4>
+
+                    <!-- Shift & Class Selector -->
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Shift</label>
+                            <select id="testShift" onchange="loadTestClasses(); loadTestStudents();" class="mobile-input text-xs font-bold bg-white force-uppercase">
+                                <option value="Morning">Morning Shift</option>
+                                <option value="Evening" selected>Evening Shift</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Class</label>
+                            <select id="testClass" onchange="loadTestStudents()" class="mobile-input text-xs font-bold bg-white force-uppercase">
+                                <!-- Populated dynamically -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Subject & Chapter / Topic -->
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Subject</label>
+                            <input type="text" id="testSubject" list="subjectDatalist" class="mobile-input text-xs font-bold force-uppercase" placeholder="e.g. Science" value="Science">
+                            <datalist id="subjectDatalist">
+                                <option value="Science">
+                                <option value="Mathematics">
+                                <option value="Physics">
+                                <option value="Chemistry">
+                                <option value="Biology">
+                                <option value="English">
+                                <option value="Social Science">
+                                <option value="Hindi">
+                            </datalist>
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Topic / Chapter</label>
+                            <input type="text" id="testTopic" class="mobile-input text-xs font-bold" placeholder="e.g. Chapter 4">
+                        </div>
+                    </div>
+
+                    <!-- Date & Max Marks -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Test Date</label>
+                            <input type="date" id="testDate" class="mobile-input text-xs font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Total Marks</label>
+                            <input type="number" id="testMaxMarks" class="mobile-input text-xs font-black text-purple-700 bg-purple-50" placeholder="e.g. 25" value="25" min="1" max="1000">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Students Roster Card -->
+                <div class="glass-panel rounded-32 p-5 mb-24 shadow-sm">
+                    <div class="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
+                        <span class="text-[10px] font-black text-gray-600 uppercase tracking-widest">
+                            <i class="fas fa-users mr-1 text-indigo-500"></i> Students & Marks Entry
+                        </span>
+                        <button type="button" onclick="markAllTestPresent()" class="text-[9px] font-black bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-lg uppercase tracking-wider active:scale-95 transition">
+                            <i class="fas fa-check-double mr-1"></i> All Present
+                        </button>
+                    </div>
+
+                    <!-- Students List Container -->
+                    <div id="testStudentsList" class="space-y-2.5">
+                        <!-- Student rows injected dynamically -->
+                    </div>
+
+                    <!-- Bulk Broadcast Action Button -->
+                    <div class="mt-6 pt-4 border-t border-gray-100">
+                        <button type="button" id="btnBroadcastTestResults" onclick="broadcastAllTestResults()" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition flex items-center justify-center space-x-2">
+                            <i class="fab fa-whatsapp text-lg text-green-300"></i>
+                            <span>Send Results & Absence Alerts to Parents</span>
+                        </button>
+                        <p class="text-[9px] font-bold text-gray-400 text-center uppercase tracking-wider mt-2">
+                            Present bacho ko marks & Absent bacho ko absence notice deliver hoga
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SUB-MENU FOR ULTRA THEMES STUDIO -->
+            <div id="settingsThemeMenu" class="hidden">
+                <!-- Back Button & Header -->
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-3">
+                        <button type="button" onclick="closeThemeSettings()" class="w-10 h-10 bg-white text-gray-700 rounded-full flex items-center justify-center active:scale-90 transition shadow-sm border border-gray-200">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        <div>
+                            <h3 class="text-sm font-black text-gray-800 uppercase tracking-widest">Theme Studio 🎨</h3>
+                            <p class="text-[9px] font-bold text-pink-600 uppercase tracking-wider">Ultra Visual Customizer</p>
+                        </div>
+                    </div>
+                    <span id="activeThemeBadge" class="text-[8px] font-black bg-purple-100 text-purple-700 px-2.5 py-1 rounded-lg uppercase tracking-widest">
+                        Original
+                    </span>
+                </div>
+
+                <!-- Live Info Banner -->
+                <div class="glass-panel p-4 rounded-24 mb-4 border border-purple-100 flex items-center space-x-3 shadow-sm">
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-purple-600 text-white flex items-center justify-center text-lg shrink-0 shadow-md">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] font-black text-gray-800 uppercase">10 Ultra Futuristic Themes</p>
+                        <p class="text-[9px] font-bold text-gray-400 mt-0.5">Tap any theme to apply live. Your choice is permanently saved across all visits!</p>
+                    </div>
+                </div>
+
+                <!-- Theme Cards Grid Container -->
+                <div id="themeCardsGrid" class="space-y-3 mb-24">
+                    <!-- Injected dynamically via script.js -->
+                </div>
+            </div>
         </section>
     </main>
 
-    <button onclick="navigate('fee')" class="fixed bottom-24 right-4 w-14 h-14 bg-green-500 text-white rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform border-4 border-white dark:border-gray-800">
+    <button onclick="navigate('fee')" id="floatingFeeBtn" class="fixed bottom-24 right-4 w-14 h-14 bg-green-500 text-white rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform border-4 border-white dark:border-gray-800">
         <i class="fas fa-plus text-2xl"></i>
     </button>
 
@@ -558,6 +755,6 @@
     </div>
 
     <script src="./names.js"></script>
-    <script src="./script.js?v=3.1"></script>
+    <script src="./script.js?v=3.7"></script>
 </body>
 </html>

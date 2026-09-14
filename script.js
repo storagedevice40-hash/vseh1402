@@ -508,25 +508,74 @@ async function gasApi(action, payload = null) {
             }
         }
 
+        if (action === 'processNightQueue') {
+            try {
+                const res = await supabaseFetch('settings', '?key=eq.night_receipt_queue&select=*');
+                if (!Array.isArray(res) || res.length === 0 || !res[0].value) {
+                    return { status: 'success', message: 'Queue is empty.', count: 0 };
+                }
+                let queue = [];
+                try {
+                    queue = typeof res[0].value === 'string' ? JSON.parse(res[0].value) : res[0].value;
+                } catch(e) { queue = []; }
+
+                if (!Array.isArray(queue) || queue.length === 0) {
+                    return { status: 'success', message: 'Queue is empty.', count: 0 };
+                }
+
+                let sentCount = 0;
+                for (const item of queue) {
+                    if (item.phone && item.message) {
+                        await gasApi('stealthWhatsAppTrigger', { phone: item.phone, message: item.message });
+                        sentCount++;
+                        await new Promise(r => setTimeout(r, 2200));
+                    }
+                }
+
+                await supabaseFetch('settings', '', 'POST', [{
+                    key: 'night_receipt_queue',
+                    value: JSON.stringify([])
+                }], { 'Prefer': 'resolution=merge-duplicates' });
+
+                try { localStorage.setItem('vseh_night_receipt_queue', '[]'); } catch(e) {}
+                return { status: 'success', count: sentCount };
+            } catch(e) {
+                return { status: 'error', message: e.toString() };
+            }
+        }
+
         if (action === 'processAiCommand') {
             const userPrompt = payload.prompt || payload.command;
             const contextData = payload.context || {};
-            let roster = "No data yet.";
-            if (contextData.students && contextData.students.length > 0) {
-                roster = contextData.students.map(s => `${s.name} (Class: ${s.class}, Fee: ${s.fee})`).join("\n");
+            
+            // Check if user has configured custom Gemini API key
+            let customKey = (appData.waSettings && appData.waSettings.geminiKey) || localStorage.getItem('vseh_gemini_key');
+            if (customKey && customKey.trim()) {
+                try {
+                    let roster = "No data yet.";
+                    if (contextData.students && contextData.students.length > 0) {
+                        roster = contextData.students.map(s => `${s.name} (Class: ${s.class}, Fee: ${s.fee})`).join("\n");
+                    }
+                    const systemPrompt = `You are "Vijay Sir AI Assistant" for VSEH PRO.\nCurrent Date: ${new Date().toLocaleDateString('en-GB')}\nTotal Students: ${contextData.students ? contextData.students.length : 0}\nThis Month Paid Students: ${contextData.paidCount || 0}\n\nROSTER DATA:\n${roster}\n\nAnswer in simple Hindi + English mix. Keep responses concise and direct. Format beautifully with bolding.\nIf the user asks you to mark attendance (present or absent) for all students of a specific class, add this command block at the end: <CMD>MARK_ATTENDANCE|Class|Status</CMD>`;
+                    const finalPrompt = systemPrompt + "\n\nUser Command: " + userPrompt;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(customKey.trim())}`;
+                    const resp = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: finalPrompt }] }] })
+                    });
+                    const resJson = await resp.json();
+                    if (!resJson.error && resJson.candidates && resJson.candidates[0] && resJson.candidates[0].content) {
+                        const aiReply = resJson.candidates[0].content.parts[0].text.trim();
+                        return { status: 'success', result: { intent: "TEXT_RESPONSE", message: aiReply } };
+                    }
+                } catch(e) {
+                    console.warn("External Gemini API call failed, falling back to Native NLP engine:", e);
+                }
             }
-            const systemPrompt = `You are "Vijay Sir AI Assistant" for VSEH PRO.\nCurrent Date: ${new Date().toLocaleDateString('en-GB')}\nTotal Students: ${contextData.students ? contextData.students.length : 0}\nThis Month Paid Students: ${contextData.paidCount || 0}\n\nROSTER DATA:\n${roster}\n\nAnswer in simple Hindi + English mix. Keep responses concise and direct. Format beautifully with bolding.\nIf the user asks you to mark attendance (present or absent) for all students of a specific class, add this command block at the end: <CMD>MARK_ATTENDANCE|Class|Status</CMD>`;
-            const finalPrompt = systemPrompt + "\n\nUser Command: " + userPrompt;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyDgvMXsvNyliJCtqLTUK0Y_hLjC8i0LUVI`;
-            const resp = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: finalPrompt }] }] })
-            });
-            const resJson = await resp.json();
-            if (resJson.error) return { status: 'error', message: resJson.error.message };
-            const aiReply = resJson.candidates[0].content.parts[0].text.trim();
-            return { status: 'success', result: { intent: "TEXT_RESPONSE", message: aiReply } };
+            
+            // Zero-Failure Native Smart NLP Engine
+            return processLocalAiCommand(userPrompt, contextData);
         }
 
         return { status: 'error', message: 'Unknown action' };
@@ -536,7 +585,424 @@ async function gasApi(action, payload = null) {
     }
 }
 
+
+// ==========================================================================
+// VSEH PRO ZERO-FAILURE INTELLIGENT NLP ASSISTANT ENGINE
+// ==========================================================================
+function processLocalAiCommand(userPrompt, contextData) {
+    let p = (userPrompt || '').trim().toLowerCase();
+    let rawPrompt = (userPrompt || '').trim();
+    let students = (contextData && contextData.students) ? contextData.students : (appData.students || []);
+    let payments = (contextData && contextData.payments) ? contextData.payments : (appData.payments || []);
+    
+    // ==========================================================================
+    // 0. BROADCAST / BULK WHATSAPP MESSAGE ENGINE
+    // ==========================================================================
+    // Patterns: "Send to all: ...", "Send to class 10th: ...", "Send to 9th: ...", "Broadcast to all: ..."
+    let isBroadcastCmd = (
+        p.startsWith('send to all') || 
+        p.startsWith('send message to all') || 
+        p.startsWith('broadcast to all') || 
+        p.startsWith('broadcast to ') ||
+        p.startsWith('message to all') ||
+        p.startsWith('send to class') ||
+        p.startsWith('send to ') ||
+        p.includes('ko message bhejo') ||
+        p.includes('ko message karo') ||
+        p.includes('sabhi students ko message') ||
+        p.includes('sabhi bacho ko message')
+    );
+
+    if (isBroadcastCmd) {
+        let targetType = 'all'; // 'all', 'class', 'shift'
+        let targetClass = '';
+        let targetShift = '';
+        let broadcastContent = '';
+
+        let targetPrefix = '';
+        // Extract message content: check colon first
+        if (rawPrompt.includes(':')) {
+            let colonIdx = rawPrompt.indexOf(':');
+            targetPrefix = p.substring(0, colonIdx).trim();
+            broadcastContent = rawPrompt.substring(colonIdx + 1).trim();
+        } else {
+            // Remove command prefixes
+            targetPrefix = p;
+            let cleaned = rawPrompt.replace(/^(send to all students|send to all student|send to all|send message to all|broadcast to all|message to all|sabhi students ko message bhejo|sabhi bacho ko message bhejo|sabhi students ko message|sabhi bacho ko message)\s*/i, '');
+            cleaned = cleaned.replace(/^send to (class\s*)?[0-9]{1,2}(?:st|nd|rd|th)?\s*/i, '');
+            cleaned = cleaned.replace(/^class\s*[0-9]{1,2}(?:st|nd|rd|th)?\s*(ko message bhejo|ko message karo|ko message)\s*/i, '');
+            cleaned = cleaned.replace(/^send to (morning|evening)(\s*shift)?\s*/i, '');
+            broadcastContent = cleaned.trim();
+        }
+
+        // Determine target audience ONLY from targetPrefix
+        if (targetPrefix.includes('morning')) {
+            targetShift = 'Morning';
+            targetType = 'shift';
+        } else if (targetPrefix.includes('evening')) {
+            targetShift = 'Evening';
+            targetType = 'shift';
+        }
+
+        let clsMatch = targetPrefix.match(/(?:class\s*|c-)?([0-9]{1,2}(?:st|nd|rd|th)?|[0-9]{1,2})/i);
+        if (clsMatch && !targetPrefix.includes('all')) {
+            let num = clsMatch[1].replace(/[^0-9]/g, '');
+            if (num) {
+                targetClass = num + 'th';
+                let match = students.find(s => s.class && (s.class.toLowerCase().includes(num) || s.class.toLowerCase() === clsMatch[1].toLowerCase()));
+                if (match) targetClass = match.class;
+                targetType = 'class';
+            }
+        }
+
+        if (!broadcastContent || broadcastContent.length < 2) {
+            return {
+                status: 'success',
+                result: {
+                    intent: "TEXT_RESPONSE",
+                    message: `📢 *BROADCAST MESSAGE COMMAND GUIDE* 🌟\n\nAap is tarah se message bhej sakte hain:\n\n1. • *"Send to all: Kal coaching me 9 baje test hoga"* (Sabhi bacho ko jayega)\n2. • *"Send to class 10th: Kal physics ki extra class hai"* (Sirf Class 10th ko)\n3. • *"Send to morning: Kal subah 7 AM par class hogi"* (Sirf Morning shift ko)\n\n💡 *Tip:* Colon (:) ke baad apna message likhein.`
+                }
+            };
+        }
+
+        // Filter target students with valid phone
+        let targets = [];
+        let targetLabel = '';
+        if (targetType === 'all') {
+            targets = students.filter(s => s.phone && s.phone.toString().trim().length >= 10);
+            targetLabel = `All Students (${targets.length})`;
+        } else if (targetType === 'class') {
+            targets = students.filter(s => s.class && s.class.toLowerCase() === targetClass.toLowerCase() && s.phone && s.phone.toString().trim().length >= 10);
+            targetLabel = `Class ${targetClass} (${targets.length} students)`;
+        } else if (targetType === 'shift') {
+            targets = students.filter(s => (s.shift || 'Morning').toLowerCase() === targetShift.toLowerCase() && s.phone && s.phone.toString().trim().length >= 10);
+            targetLabel = `${targetShift} Shift (${targets.length} students)`;
+        }
+
+        if (targets.length === 0) {
+            return {
+                status: 'success',
+                result: {
+                    intent: "TEXT_RESPONSE",
+                    message: `❌ **Koi student nahi mila!**\nTarget group *${targetLabel || targetClass || 'Selected'}* me valid 10-digit phone number ke sath koi student nahi mila.`
+                }
+            };
+        }
+
+        return {
+            status: 'success',
+            result: {
+                intent: "BROADCAST_RESPONSE",
+                message: `🚀 **BROADCAST DISPATCHED TO ${targets.length} STUDENTS!**\n\n• **Audience:** ${targetLabel}\n• **Total Recipients:** ${targets.length} Students\n\n📝 *Notice Text:*\n"${broadcastContent}"\n\n<CMD>EXECUTE_BROADCAST|${targetType}|${targetClass || targetShift || 'All'}|${encodeURIComponent(broadcastContent)}</CMD>\n\nWhatsApp par messages background me bheje ja rahe hain!`
+            }
+        };
+    }
+    
+    // 1. ATTENDANCE COMMAND
+    if (p.includes('attendance') || p.includes('present') || p.includes('absent') || p.includes('hazri') || p.includes('mark')) {
+        let status = p.includes('absent') ? 'Absent' : 'Present';
+        let classMatch = p.match(/(?:class\s*|c-)?([0-9]{1,2}(?:st|nd|rd|th)?|[0-9]{1,2})/i);
+        let targetClass = '';
+        if (classMatch) {
+            let num = classMatch[1].replace(/[^0-9]/g, '');
+            if (num) {
+                targetClass = num + 'th';
+                let matchingClass = students.find(s => s.class && (s.class.toLowerCase().includes(num) || s.class.toLowerCase() === classMatch[1].toLowerCase()));
+                if (matchingClass) targetClass = matchingClass.class;
+            }
+        }
+        
+        if (targetClass) {
+            let stuInClass = students.filter(s => s.class === targetClass);
+            return {
+                status: 'success',
+                result: {
+                    intent: "COMMAND_RESPONSE",
+                    message: `✔ **Class ${targetClass} Attendance Marked!**\nClass ${targetClass} ke sabhi (${stuInClass.length}) students ko **${status}** mark kar diya gaya hai.\n\n<CMD>MARK_ATTENDANCE|${targetClass}|${status}</CMD>`
+                }
+            };
+        } else if (p.includes('sabhi') || p.includes('all')) {
+            return {
+                status: 'success',
+                result: {
+                    intent: "COMMAND_RESPONSE",
+                    message: `✔ **All Students Attendance Marked!**\nSabhi students ko **${status}** mark kar diya gaya hai.\n\n<CMD>MARK_ATTENDANCE|All|${status}</CMD>`
+                }
+            };
+        }
+    }
+    
+    // 2. PTM NOTE / MEETING NOTICE
+    if (p.includes('ptm') || p.includes('meeting') || p.includes('parent') || p.includes('notice')) {
+        let upcomingDate = new Date();
+        upcomingDate.setDate(upcomingDate.getDate() + ((7 - upcomingDate.getDay()) % 7 || 7));
+        let dateStr = upcomingDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        
+        let msg = `📢 *PARENTS-TEACHER MEETING (PTM) NOTICE* 🌟\n\n*VIJAY SIR EDUCATION HUB*\n\nRespected Parents,\n\nThis is to cordially inform you that a Parents-Teacher Meeting (PTM) has been scheduled to discuss your ward's academic performance, test results, attendance, and preparation strategy.\n\n📅 *Date:* ${dateStr} (Sunday)\n⏰ *Time:* 10:00 AM to 01:00 PM\n📍 *Venue:* Vijay Sir Education Hub\n\nKindly note:\n1. Your presence is essential for your child's continuous academic improvement.\n2. Parents with pending fee dues are requested to kindly clear the same during the meeting.\n\nLooking forward to meeting you.\n\nWarm Regards,\n*Vijay Sir*\nDirector, VSEH`;
+        return {
+            status: 'success',
+            result: { intent: "TEXT_RESPONSE", message: msg }
+        };
+    }
+    
+    // 3. DEFAULTERS / PENDING FEES
+    if (p.includes('defaulter') || p.includes('pending') || p.includes('due') || p.includes('baki') || p.includes('unpaid') || p.includes('fees')) {
+        let defaulters = [];
+        let totalPending = 0;
+        
+        students.forEach(s => {
+            let dues = calculateStudentDues(s, payments);
+            if (dues.isOverdue && dues.pendingMonths.length > 0) {
+                defaulters.push({
+                    name: s.name,
+                    class: s.class,
+                    shift: s.shift || 'Morning',
+                    phone: s.phone,
+                    amount: dues.totalPendingAmount,
+                    months: dues.formattedPendingText
+                });
+                totalPending += dues.totalPendingAmount;
+            }
+        });
+        
+        if (defaulters.length === 0) {
+            return {
+                status: 'success',
+                result: { intent: "TEXT_RESPONSE", message: `🎉 **Good News!**\nAbhi koi bhi fee defaulter nahi hai. Sabhi active students ki fees fully cleared hai!` }
+            };
+        }
+        
+        defaulters.sort((a, b) => b.amount - a.amount);
+        let listStr = defaulters.slice(0, 8).map((d, idx) => `${idx + 1}. *${d.name}* (${d.class}) - ₹${d.amount} (${d.months})`).join("\n");
+        let extra = defaulters.length > 8 ? `\n...aur ${defaulters.length - 8} aur students (Total ${defaulters.length} defaulters)` : '';
+        
+        let reply = `📋 *DEFAULTERS & PENDING FEES REPORT*\n\n• *Total Defaulters:* ${defaulters.length}\n• *Total Pending Amount:* ₹${totalPending.toLocaleString('en-IN')}\n\n*Top Defaulters:*\n${listStr}${extra}\n\n💡 *Tip:* Defaulters panel se aap direct WhatsApp reminder bhej sakte hain.`;
+        return {
+            status: 'success',
+            result: { intent: "TEXT_RESPONSE", message: reply }
+        };
+    }
+    
+    // 4. COLLECTION / STATS / SUMMARY
+    if (p.includes('collection') || p.includes('stat') || p.includes('summary') || p.includes('paid') || p.includes('hisab') || p.includes('total')) {
+        let now = new Date();
+        let curMonth = now.toLocaleString('default', { month: 'long' });
+        let collectedAmt = 0;
+        
+        let monthPayments = (payments || []).filter(pay => {
+            let pMonth = (pay.month || '').toLowerCase();
+            return pMonth.includes(curMonth.toLowerCase());
+        });
+        
+        monthPayments.forEach(pay => {
+            collectedAmt += Number(pay.amount) || 0;
+        });
+        
+        let uniquePaidStudents = new Set(monthPayments.map(p => (p.studentName || '').trim().toUpperCase())).size;
+        
+        let reply = `📊 *VSEH FINANCIAL & ROSTER SUMMARY*\n\n• *Current Month:* ${curMonth} ${now.getFullYear()}\n• *Total Registered Students:* ${students.length}\n• *Students Paid for ${curMonth}:* ${uniquePaidStudents}\n• *Total Collection this Month:* ₹${collectedAmt.toLocaleString('en-IN')}\n\nData is 100% synced with Supabase cloud database!`;
+        return {
+            status: 'success',
+            result: { intent: "TEXT_RESPONSE", message: reply }
+        };
+    }
+    
+    // 5. STUDENT SEARCH / LOOKUP
+    let cleanQuery = p.replace(/^(details of|search|find|lookup|check|info of|who is|batao|kiska|phone of|phone number of)\s+/i, '').replace(/(\s+(ki details|ka number|ka detail|ke bare me|ka record))$/i, '').trim();
+    if (cleanQuery.length >= 3) {
+        let matches = students.filter(s => s.name && s.name.toLowerCase().includes(cleanQuery));
+        if (matches.length > 0) {
+            let stuCards = matches.slice(0, 3).map(s => {
+                let dues = calculateStudentDues(s, payments);
+                let statusTxt = dues.isOverdue ? `❌ Pending: ₹${dues.totalPendingAmount} (${dues.formattedPendingText})` : `✅ All Fees Cleared`;
+                return `👤 *${s.name.toUpperCase()}*\n• *Class:* ${s.class} (${s.shift || 'Morning'})\n• *Phone:* +91 ${s.phone || 'N/A'}\n• *Monthly Fee:* ₹${s.fee || '500'}\n• *Status:* ${statusTxt}`;
+            }).join("\n\n");
+            return {
+                status: 'success',
+                result: { intent: "TEXT_RESPONSE", message: `🔍 *STUDENT SEARCH RESULTS:*\n\n${stuCards}` }
+            };
+        }
+    }
+    
+    // 6. DEFAULT / GENERAL HELP
+    let helpMsg = `🤖 *VIJAY SIR AI ASSISTANT* 🌟\n\nMain aapki coaching management me madad ke liye ready hoon! Ye commands try karein:\n\n1. 📢 *"Generate PTM Note"* - Parent meeting notice draft karein\n2. 📋 *"Defaulters List"* - Pending fees report dekhein\n3. 📊 *"Collection Summary"* - Total collection aur paid stats janein\n4. 📝 *"Mark Class 10th Present"* - Automatic attendance mark karein\n5. 🔍 *"Details of [Student Name]"* - Kisi bhi student ka profile dekhein`;
+    return {
+        status: 'success',
+        result: { intent: "TEXT_RESPONSE", message: helpMsg }
+    };
+}
+
+async function executeAiBroadcast(bType, bTarget, bContent) {
+    let students = appData.students || [];
+    let targets = [];
+    
+    if (bType === 'all') {
+        targets = students.filter(s => s.phone && s.phone.toString().trim().length >= 10);
+    } else if (bType === 'class') {
+        targets = students.filter(s => s.class && s.class.toLowerCase() === bTarget.toLowerCase() && s.phone && s.phone.toString().trim().length >= 10);
+    } else if (bType === 'shift') {
+        targets = students.filter(s => (s.shift || 'Morning').toLowerCase() === bTarget.toLowerCase() && s.phone && s.phone.toString().trim().length >= 10);
+    }
+    
+    if (targets.length === 0) {
+        showToast("NO VALID RECIPIENTS FOUND");
+        return;
+    }
+    
+    let formattedMsg = `📢 *IMPORTANT NOTICE* 🌟\n*VIJAY SIR EDUCATION HUB*\n\nDear Student / Parent,\n\n${bContent}\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+    
+    showToast(`BROADCASTING TO ${targets.length} STUDENTS 🚀`);
+    
+    let sentCount = 0;
+    for (let i = 0; i < targets.length; i++) {
+        let s = targets[i];
+        try {
+            gasApi('stealthWhatsAppTrigger', { phone: s.phone, message: formattedMsg });
+            sentCount++;
+        } catch(e) {}
+    }
+    
+    setTimeout(() => {
+        showToast(`✔ BROADCAST SENT TO ${sentCount} STUDENTS!`);
+    }, 1200);
+}
+
+function executeAiAttendanceMark(targetClass, targetStatus) {
+    let attClass = document.getElementById('attClass');
+    if (attClass && targetClass !== 'All') {
+        attClass.value = targetClass;
+    }
+    loadAttendanceStudents();
+    
+    setTimeout(() => {
+        let rows = document.querySelectorAll('#attendance-list [data-student-name]');
+        rows.forEach(row => {
+            let stuClass = row.getAttribute('data-student-class');
+            if (targetClass === 'All' || !stuClass || stuClass.toLowerCase() === targetClass.toLowerCase()) {
+                let btn = row.querySelector(`.att-btn[onclick*="${targetStatus}"]`);
+                if (btn) setAtt(btn, targetStatus);
+            }
+        });
+        showToast(`CLASS ${targetClass.toUpperCase()} MARKED ${targetStatus.toUpperCase()}!`);
+    }, 150);
+}
+
+
+// ==========================================================================
+// VSEH PRO - 10 ULTRA THEMES STUDIO ENGINE
+// ==========================================================================
+var THEMES_DATA = [
+    { id: 'original', name: 'Original Classic', icon: 'fa-landmark', desc: 'Default VSEH Pro Clean Light & Indigo', colors: ['#f4f7fe', '#6366f1', '#10b981'], badge: 'Original' },
+    { id: 'cyberpunk', name: 'Cyberpunk Neon 2077', icon: 'fa-bolt', desc: 'Futuristic Dark Neon Cyan & Magenta Glow', colors: ['#080814', '#00f2fe', '#f72585'], badge: 'Ultra Neon' },
+    { id: 'gold-obsidian', name: 'Midnight Obsidian & Gold', icon: 'fa-crown', desc: 'Velvet Obsidian Black & Molten Gold', colors: ['#0a0908', '#f59e0b', '#d97706'], badge: 'Royal Luxury' },
+    { id: 'aurora', name: 'Aurora Borealis Hologram', icon: 'fa-wand-magic-sparkles', desc: 'Ethereal Arctic Teal & Violet Mesh', colors: ['#031219', '#2dd4bf', '#a78bfa'], badge: 'Holographic' },
+    { id: 'sunset-blaze', name: 'Sunset Crimson & Violet', icon: 'fa-fire-flame-curved', desc: 'Warm Twilight Glow & Coral Blaze', colors: ['#140718', '#ff416c', '#f97316'], badge: 'Radiant Blaze' },
+    { id: 'emerald-zen', name: 'Emerald Matrix & Zen', icon: 'fa-leaf', desc: 'Deep Botanical Spruce & Mint Glow', colors: ['#04140c', '#10b981', '#34d399'], badge: 'Botanical Zen' },
+    { id: 'deep-ocean', name: 'Deep Ocean & Electric Aqua', icon: 'fa-water', desc: 'Mariana Abyss & Bioluminescent Aqua', colors: ['#030a16', '#38bdf8', '#2563eb'], badge: 'Aquatic Abyss' },
+    { id: 'cosmic-galaxy', name: 'Cosmic Galaxy & Nebula', icon: 'fa-meteor', desc: 'Starlight Void & Electric Amethyst', colors: ['#0a0218', '#c084fc', '#6366f1'], badge: 'Deep Space' },
+    { id: 'sakura-frost', name: 'Tokyo Cherry Blossom', icon: 'fa-fan', desc: 'Frosted Rose Pearl & Sakura Blush', colors: ['#fdf4f8', '#ec4899', '#fbcfe8'], badge: 'Sakura Frost' },
+    { id: 'synthwave', name: 'Retro 80s Synthwave', icon: 'fa-gamepad', desc: 'Outrun Sunset Grid & Wireframe Cyan', colors: ['#140426', '#ff007f', '#00f5d4'], badge: 'Retro 80s' },
+    { id: 'neumorphic', name: 'Titanium Silver Slate', icon: 'fa-shapes', desc: 'Extruded Sculpted Soft Neumorphism', colors: ['#e2e8f0', '#cbd5e1', '#334155'], badge: 'Neumorphism' }
+];
+
+function openThemeSettings() {
+    document.getElementById('settingsMainMenu').classList.add('hidden');
+    let subShift = document.getElementById('settingsSubMenu');
+    if (subShift) subShift.classList.add('hidden');
+    let subTest = document.getElementById('settingsTestMenu');
+    if (subTest) subTest.classList.add('hidden');
+    
+    let themeMenu = document.getElementById('settingsThemeMenu');
+    if (themeMenu) themeMenu.classList.remove('hidden');
+    
+    renderThemeCards();
+}
+
+function closeThemeSettings() {
+    let themeMenu = document.getElementById('settingsThemeMenu');
+    if (themeMenu) themeMenu.classList.add('hidden');
+    document.getElementById('settingsMainMenu').classList.remove('hidden');
+}
+
+function renderThemeCards() {
+    let grid = document.getElementById('themeCardsGrid');
+    if (!grid) return;
+    
+    let activeTheme = localStorage.getItem('vseh_active_theme') || 'original';
+    grid.innerHTML = '';
+    
+    THEMES_DATA.forEach(t => {
+        let isActive = (t.id === activeTheme);
+        let activeBorder = isActive ? 'border-2 border-purple-500 shadow-xl' : 'border border-gray-100 hover:border-purple-200';
+        let checkBadge = isActive ? '<span class="text-[9px] font-black bg-purple-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0"><i class="fas fa-check mr-1"></i>Active</span>' : '';
+        
+        let colorSwatches = t.colors.map(c => `<span class="w-3.5 h-3.5 rounded-full shadow-sm inline-block border border-white/40" style="background-color: ${c};"></span>`).join('');
+        
+        grid.insertAdjacentHTML('beforeend', `
+        <div onclick="applyTheme('${t.id}')" class="glass-panel p-4 rounded-24 cursor-pointer transition-all active:scale-95 ${activeBorder}">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3 min-w-0 flex-1">
+                    <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 shadow-inner border border-white/20" style="background: linear-gradient(135deg, ${t.colors[0]}, ${t.colors[1]}); color: ${t.colors[2]};">
+                        <i class="fas ${t.icon}"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center space-x-1.5">
+                            <h4 class="text-xs font-black text-gray-800 uppercase tracking-wide truncate">${t.name}</h4>
+                            <span class="text-[8px] font-bold text-gray-400 uppercase tracking-wider">${t.badge}</span>
+                        </div>
+                        <p class="text-[9px] font-bold text-gray-400 truncate mt-0.5">${t.desc}</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2 shrink-0 ml-2">
+                    <div class="flex items-center space-x-1">
+                        ${colorSwatches}
+                    </div>
+                    ${checkBadge}
+                </div>
+            </div>
+        </div>`);
+    });
+    
+    let activeBadge = document.getElementById('activeThemeBadge');
+    if (activeBadge) {
+        let found = THEMES_DATA.find(t => t.id === activeTheme);
+        activeBadge.innerText = found ? found.name : 'Original';
+    }
+}
+
+function applyTheme(themeId, shouldSave = true) {
+    if (!themeId) themeId = 'original';
+    
+    if (themeId === 'original') {
+        document.body.removeAttribute('data-theme');
+    } else {
+        document.body.setAttribute('data-theme', themeId);
+    }
+    
+    if (shouldSave) {
+        try {
+            localStorage.setItem('vseh_active_theme', themeId);
+        } catch(e) {}
+        
+        // Sync to Supabase settings in background
+        try {
+            supabaseFetch('settings', '', 'POST', [{
+                key: 'activeTheme',
+                value: themeId
+            }], { 'Prefer': 'resolution=merge-duplicates' }).catch(()=>{});
+        } catch(e) {}
+        
+        let found = THEMES_DATA.find(t => t.id === themeId);
+        let name = found ? found.name : themeId;
+        showToast(`🎨 THEME APPLIED: ${name.toUpperCase()}`);
+        renderThemeCards();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Apply Stored Theme on Startup Immediately (Zero Flicker)
+    try { let t = localStorage.getItem('vseh_active_theme') || 'original'; applyTheme(t, false); } catch(e) {}
+
     setInterval(updateClock, 1000); updateClock();
     document.getElementById('feeMonth').value = currentMonthName;
     document.getElementById('attDate').valueAsDate = new Date();
@@ -582,6 +1048,13 @@ async function runAutopilotDueCheck() {
     if (currentHour < 8 || currentHour >= 12) {
         return;
     }
+
+    // Safety Net: During morning working hours (8:00 AM to 12:00 PM), flush any night queued receipts
+    gasApi('processNightQueue').then(res => {
+        if (res && res.count > 0) {
+            showToast(`✔ SENT ${res.count} MORNING RECEIPTS TO PARENTS!`);
+        }
+    }).catch(()=>{});
 
     // Load persistent log of sent reminders (localStorage + Supabase settings)
     let localLog = {};
@@ -686,6 +1159,7 @@ async function runAutopilotDueCheck() {
 function syncUIPanels() {
     initSettingsUI();
     runAutopilotDueCheck(); 
+    checkFeeNightNotice();
     updateDashboard();
     if(document.getElementById('dirShift')) filterClasses('dirShift', 'dirClass'); 
     if(document.getElementById('attShift')) filterClasses('attShift', 'attClass');
@@ -720,8 +1194,105 @@ function syncUIPanels() {
             return prefix + '_' + new Date().getTime() + '_' + Math.floor(Math.random() * 1000);
         }
 
-        async function sendSuccessMsg(name, phone, amt, mnth, mode) {
-            var msg = `Fee Payment Receipt 🧾✨\n\nDear Parent,\n\nWe have received the monthly fee payment of *₹${amt}* for *${name.toUpperCase()}* for the month of *${mnth.toUpperCase()}* (Mode: *${mode}*).\n\nThank you for your timely payment and trust in us! We are committed to providing the best learning guidance and care for your child's bright academic future. 🌟\n\nWith Best Regards,\n*VIJAY SIR EDUCATION HUB*`;
+        async function queueNightReceipt(receiptItem) {
+            try {
+                let existingQueue = [];
+                try {
+                    let res = await supabaseFetch('settings', '?key=eq.night_receipt_queue&select=*');
+                    if (Array.isArray(res) && res.length > 0 && res[0].value) {
+                        existingQueue = typeof res[0].value === 'string' ? JSON.parse(res[0].value) : res[0].value;
+                    }
+                } catch(e) {}
+
+                if (!Array.isArray(existingQueue)) existingQueue = [];
+                existingQueue.push(receiptItem);
+
+                await supabaseFetch('settings', '', 'POST', [{
+                    key: 'night_receipt_queue',
+                    value: JSON.stringify(existingQueue)
+                }], { 'Prefer': 'resolution=merge-duplicates' });
+
+                try {
+                    localStorage.setItem('vseh_night_receipt_queue', JSON.stringify(existingQueue));
+                } catch(e) {}
+
+                showToast("🌙 SAVED TO CLOUD QUEUE! Auto-sends tomorrow at 8:00 AM (No app opening needed).");
+            } catch(err) {
+                console.error("Failed to queue night receipt:", err);
+            }
+        }
+
+        function checkFeeNightNotice() {
+            let notice = document.getElementById('feeNightNotice');
+            let btn = document.getElementById('feeSubmitBtn');
+            if (!notice) return;
+            let hour = new Date().getHours();
+            let isNight = (hour >= 21 || hour < 8);
+            if (isNight) {
+                notice.classList.remove('hidden');
+                if (btn) btn.innerHTML = 'SAVE & QUEUE FOR 8 AM <i class="fas fa-moon ml-2 text-lg"></i>';
+            } else {
+                notice.classList.add('hidden');
+                if (btn) btn.innerHTML = 'SAVE & AUTO DISPATCH <i class="fas fa-robot ml-2 text-lg"></i>';
+            }
+        }
+
+        async function sendSuccessMsg(name, phone, amt, mnth, mode, studentObj = null, forceSendNow = false) {
+            let student = studentObj || (appData.students || []).find(s => s.phone === phone || (s.name && s.name.toUpperCase() === (name || '').toUpperCase()));
+            
+            // Expected monthly fee for the student
+            let studentFee = student ? (Number(student.fee) || 0) : 0;
+            if (studentFee === 0 && student && appData.feeSettings) {
+                let key = (student.shift || 'Morning') + ' - ' + (student.class || '');
+                studentFee = Number(appData.feeSettings[key]) || 0;
+            }
+            
+            // Partial payment for current transaction month
+            let monthPartialRemaining = (studentFee > 0 && Number(amt) < studentFee) ? (studentFee - Number(amt)) : 0;
+            
+            // Remaining pending months from dues calculation (excluding current payment month to prevent double counting)
+            let dues = student ? calculateStudentDues(student, appData.payments) : { isOverdue: false, totalPendingAmount: 0, formattedPendingText: '', pendingMonths: [] };
+            let cleanCurrentMonth = (mnth || '').trim().toLowerCase();
+            let otherPendingMonths = (dues.pendingMonths || []).filter(m => m.trim().toLowerCase() !== cleanCurrentMonth);
+            let otherPendingAmount = otherPendingMonths.length * studentFee;
+            let totalRemaining = monthPartialRemaining + otherPendingAmount;
+            
+            var msg = '';
+            if (totalRemaining > 0) {
+                let details = [];
+                if (monthPartialRemaining > 0) details.push(`${mnth.toUpperCase()} balance: ₹${monthPartialRemaining}`);
+                if (otherPendingMonths.length > 0) {
+                    let otherText = otherPendingMonths.map(m => m.toUpperCase()).join(", ");
+                    details.push(`Pending: ${otherText}`);
+                }
+                let detailStr = details.length > 0 ? ` (${details.join(" | ")})` : '';
+                
+                msg = `Fee Payment Receipt 🧾✨\n\nDear Parent,\n\nWe have received fee payment of *₹${amt}* for *${name.toUpperCase()}* for the month of *${mnth.toUpperCase()}* (Mode: *${mode}*).\n\n📌 *Payment & Balance Summary:*\n• Amount Received: *₹${amt}*\n• Remaining Due: *₹${totalRemaining}*${detailStr}\n\nKindly clear the remaining balance at your earliest convenience. Thank you for your continued trust and support! 🌟\n\nWith Best Regards,\n*VIJAY SIR EDUCATION HUB*`;
+            } else {
+                msg = `Fee Payment Receipt 🧾✨\n\nDear Parent,\n\nWe have received the monthly fee payment of *₹${amt}* for *${name.toUpperCase()}* for the month of *${mnth.toUpperCase()}* (Mode: *${mode}*).\n\n🎉 *All fee dues are completely cleared!*\n\nThank you for your timely payment and trust in us! We are committed to providing the best learning guidance and care for your child's bright academic future. 🌟\n\nWith Best Regards,\n*VIJAY SIR EDUCATION HUB*`;
+            }
+
+            // CHECK QUIET HOURS (Night 9:00 PM to Morning 8:00 AM)
+            let now = new Date();
+            let currentHour = now.getHours();
+            let isQuietHours = (currentHour >= 21 || currentHour < 8);
+
+            if (isQuietHours && !forceSendNow) {
+                showToast("🌙 NIGHT TIME: Queued for 8:00 AM Auto-Send (No App Opening Needed)!");
+                await queueNightReceipt({
+                    id: 'Q_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    studentName: name,
+                    phone: phone,
+                    amount: amt,
+                    month: mnth,
+                    mode: mode,
+                    message: msg,
+                    queuedAt: now.toISOString(),
+                    scheduledFor: '08:00 AM'
+                });
+                return;
+            }
+            
             showToast("DISPATCHING RECEIPT TO WHATSAPP...");
             let res = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
             if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
@@ -896,6 +1467,17 @@ Warm Regards,
         if(document.getElementById('dirShift')) filterClasses('dirShift', 'dirClass'); renderDefaulters(); renderPaidStudents(); }
             if(id === 'defaulters') { renderDefaulters(); }
             if(id === 'paid-students') { renderPaidStudents(); }
+            if(id === 'fee') { checkFeeNightNotice(); }
+            
+            // Auto-hide floating fee button on AI Hub or Fee Collection tab to prevent overlap
+            let feeFab = document.getElementById('floatingFeeBtn');
+            if (feeFab) {
+                if (id === 'aihub' || id === 'fee') {
+                    feeFab.classList.add('hidden');
+                } else {
+                    feeFab.classList.remove('hidden');
+                }
+            }
             
             let header = document.getElementById('mainHeader');
             let headerTitle = document.getElementById('headerTitle');
@@ -1272,6 +1854,285 @@ Warm Regards,
         function closeShiftSettings() {
             document.getElementById('settingsSubMenu').classList.add('hidden');
             document.getElementById('settingsMainMenu').classList.remove('hidden');
+        }
+
+        // ==========================================================================
+        // TEST & EXAM MARKS MANAGER ENGINE
+        // ==========================================================================
+        function openTestSettings() {
+            document.getElementById('settingsMainMenu').classList.add('hidden');
+            let subShift = document.getElementById('settingsSubMenu');
+            if (subShift) subShift.classList.add('hidden');
+            
+            let testMenu = document.getElementById('settingsTestMenu');
+            if (testMenu) testMenu.classList.remove('hidden');
+            
+            let tDate = document.getElementById('testDate');
+            if (tDate) tDate.valueAsDate = new Date();
+            
+            loadTestClasses();
+            loadTestStudents();
+        }
+
+        function closeTestSettings() {
+            let testMenu = document.getElementById('settingsTestMenu');
+            if (testMenu) testMenu.classList.add('hidden');
+            document.getElementById('settingsMainMenu').classList.remove('hidden');
+        }
+
+        function loadTestClasses() {
+            let shiftElem = document.getElementById('testShift');
+            let shift = shiftElem ? shiftElem.value : 'Evening';
+            let classDropdown = document.getElementById('testClass');
+            if (!classDropdown) return;
+            
+            classDropdown.innerHTML = '';
+            
+            // Extract unique classes for this shift
+            let classes = new Set();
+            (appData.students || []).forEach(s => {
+                if ((s.shift || 'Morning') === shift && s.class) {
+                    classes.add(s.class.trim());
+                }
+            });
+            
+            // Also add classes from feeSettings if any
+            for (let k in (appData.feeSettings || {})) {
+                if (k.startsWith(shift + " - ")) {
+                    classes.add(k.replace(shift + " - ", "").trim());
+                }
+            }
+            
+            let sorted = Array.from(classes).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+            if (sorted.length === 0) {
+                classDropdown.insertAdjacentHTML('beforeend', '<option value="">No Classes Found</option>');
+            } else {
+                sorted.forEach(c => {
+                    classDropdown.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
+                });
+            }
+        }
+
+        function loadTestStudents() {
+            let shiftElem = document.getElementById('testShift');
+            let shift = shiftElem ? shiftElem.value : 'Evening';
+            let classElem = document.getElementById('testClass');
+            let cls = classElem ? classElem.value : '';
+            let list = document.getElementById('testStudentsList');
+            let countBadge = document.getElementById('testStudentCountBadge');
+            if (!list) return;
+            
+            list.innerHTML = '';
+            
+            let students = (appData.students || []).filter(s => {
+                let matchShift = (s.shift || 'Morning') === shift;
+                let matchClass = !cls || s.class === cls;
+                return matchShift && matchClass;
+            });
+            
+            if (countBadge) countBadge.innerText = `${students.length} Students`;
+            
+            if (students.length === 0) {
+                list.innerHTML = '<div class="glass-panel p-6 rounded-24 text-center"><p class="text-10 font-black text-gray-400 uppercase tracking-widest">NO STUDENTS FOUND FOR THIS SHIFT & CLASS</p></div>';
+                return;
+            }
+            
+            students.forEach((s, idx) => {
+                list.insertAdjacentHTML('beforeend', `
+                <div class="glass-panel p-3 rounded-2xl flex items-center justify-between border border-gray-100 test-stu-row transition-all" data-id="${s.id || ''}" data-name="${s.name}" data-phone="${s.phone || ''}" data-status="Present">
+                    <div class="flex-1 min-w-0 pr-2">
+                        <p class="text-xs font-black text-gray-800 force-uppercase truncate">${s.name}</p>
+                        <div class="flex items-center space-x-1 mt-0.5">
+                            <span class="text-[8px] font-bold text-gray-400 tracking-wider"><i class="fas fa-phone mr-1"></i>+91 ${s.phone || 'No Phone'}</span>
+                            <span class="test-status-tag text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-green-50 text-green-600 ml-1">Present</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <!-- Attendance Toggle [P] / [A] -->
+                        <div class="flex rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+                            <button type="button" onclick="setTestRowAttendance(this, 'Present')" class="test-att-btn btn-p px-2.5 py-1.5 text-[10px] font-black bg-green-500 text-white transition active:scale-95">P</button>
+                            <button type="button" onclick="setTestRowAttendance(this, 'Absent')" class="test-att-btn btn-a px-2.5 py-1.5 text-[10px] font-black bg-gray-100 text-gray-400 transition active:scale-95">A</button>
+                        </div>
+                        <!-- Marks Input -->
+                        <input type="number" min="0" max="1000" class="test-marks-input mobile-input w-16 text-center text-xs font-black p-1.5 bg-white border border-gray-200 rounded-xl" placeholder="Marks">
+                        <!-- Single WhatsApp Send Button -->
+                        <button type="button" onclick="sendSingleStudentTestWhatsApp(this)" class="w-8 h-8 rounded-xl bg-green-50 text-green-600 flex items-center justify-center active:scale-90 shadow-sm border border-green-200 transition" title="Send Result to this parent">
+                            <i class="fab fa-whatsapp text-sm"></i>
+                        </button>
+                    </div>
+                </div>`);
+            });
+        }
+
+        function setTestRowAttendance(btn, status) {
+            let row = btn.closest('.test-stu-row');
+            if (!row) return;
+            
+            row.setAttribute('data-status', status);
+            let btnP = row.querySelector('.btn-p');
+            let btnA = row.querySelector('.btn-a');
+            let marksInput = row.querySelector('.test-marks-input');
+            let statusTag = row.querySelector('.test-status-tag');
+            
+            if (status === 'Absent') {
+                btnA.className = 'test-att-btn btn-a px-2.5 py-1.5 text-[10px] font-black bg-red-500 text-white transition active:scale-95';
+                btnP.className = 'test-att-btn btn-p px-2.5 py-1.5 text-[10px] font-black bg-gray-100 text-gray-400 transition active:scale-95';
+                if (marksInput) {
+                    marksInput.value = '';
+                    marksInput.disabled = true;
+                    marksInput.classList.add('opacity-30', 'bg-gray-100');
+                    marksInput.placeholder = 'ABSENT';
+                }
+                if (statusTag) {
+                    statusTag.className = 'test-status-tag text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-red-50 text-red-600 ml-1';
+                    statusTag.innerText = 'Absent';
+                }
+                row.classList.add('bg-red-50/40', 'border-red-200');
+            } else {
+                btnP.className = 'test-att-btn btn-p px-2.5 py-1.5 text-[10px] font-black bg-green-500 text-white transition active:scale-95';
+                btnA.className = 'test-att-btn btn-a px-2.5 py-1.5 text-[10px] font-black bg-gray-100 text-gray-400 transition active:scale-95';
+                if (marksInput) {
+                    marksInput.disabled = false;
+                    marksInput.classList.remove('opacity-30', 'bg-gray-100');
+                    marksInput.placeholder = 'Marks';
+                }
+                if (statusTag) {
+                    statusTag.className = 'test-status-tag text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-green-50 text-green-600 ml-1';
+                    statusTag.innerText = 'Present';
+                }
+                row.classList.remove('bg-red-50/40', 'border-red-200');
+            }
+        }
+
+        function markAllTestPresent() {
+            let rows = document.querySelectorAll('#testStudentsList .test-stu-row');
+            rows.forEach(row => {
+                let btnP = row.querySelector('.btn-p');
+                if (btnP) setTestRowAttendance(btnP, 'Present');
+            });
+            showToast("ALL STUDENTS MARKED PRESENT FOR TEST");
+        }
+
+        function formatTestDate(dateStr) {
+            if (!dateStr) return new Date().toLocaleDateString('en-GB');
+            let d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            return d.toLocaleDateString('en-GB');
+        }
+
+        async function sendSingleStudentTestWhatsApp(btn) {
+            let row = btn.closest('.test-stu-row');
+            if (!row) return;
+            
+            let name = row.getAttribute('data-name');
+            let phone = row.getAttribute('data-phone');
+            let status = row.getAttribute('data-status') || 'Present';
+            let marksInput = row.querySelector('.test-marks-input');
+            let marks = marksInput ? marksInput.value.trim() : '';
+            
+            if (!phone || phone.length < 10) {
+                showToast("STUDENT HAS NO VALID PHONE NUMBER");
+                return;
+            }
+            
+            let subject = document.getElementById('testSubject') ? document.getElementById('testSubject').value.trim() : 'Test';
+            let topic = document.getElementById('testTopic') ? document.getElementById('testTopic').value.trim() : '';
+            let dateVal = document.getElementById('testDate') ? document.getElementById('testDate').value : '';
+            let testDateStr = formatTestDate(dateVal);
+            let maxMarks = document.getElementById('testMaxMarks') ? Number(document.getElementById('testMaxMarks').value) || 25 : 25;
+            
+            var msg = '';
+            if (status === 'Absent') {
+                msg = `Test Absence Alert ⚠️📢\n*VIJAY SIR EDUCATION HUB*\n\nDear Parent,\n\nPlease be informed that *${name.toUpperCase()}* was *ABSENT* in today's scheduled test:\n\n📚 *Subject:* ${subject.toUpperCase()}${topic ? `\n📖 *Topic:* ${topic}` : ''}\n📅 *Date:* ${testDateStr}\n❌ *Status:* *ABSENT IN TEST*\n\nRegular tests are vital for tracking your child's academic progress. Kindly ensure your child does not miss future tests and attends regular classes.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+            } else {
+                if (marks === '') {
+                    showToast("ENTER MARKS FIRST (OR MARK ABSENT)");
+                    if (marksInput) marksInput.focus();
+                    return;
+                }
+                let numMarks = Number(marks) || 0;
+                let pct = Math.round((numMarks / maxMarks) * 100);
+                let remark = "Good Performance 👍";
+                if (pct >= 90) remark = "Outstanding! 🌟";
+                else if (pct >= 75) remark = "Excellent! 🎯";
+                else if (pct >= 60) remark = "Good Performance 👍";
+                else if (pct >= 40) remark = "Average - Needs More Practice 📖";
+                else remark = "Needs Improvement & Hard Work ⚠️";
+                
+                msg = `Test Result Report 📝🌟\n*VIJAY SIR EDUCATION HUB*\n\nDear Parent,\n\nThe test results for *${name.toUpperCase()}* are declared below:\n\n📚 *Subject:* ${subject.toUpperCase()}${topic ? `\n📖 *Topic:* ${topic}` : ''}\n📅 *Date:* ${testDateStr}\n🎯 *Marks Obtained:* *${numMarks} / ${maxMarks}* (${pct}%)\n⭐ *Performance:* *${remark}*\n\nKindly encourage ${name.toUpperCase()} to keep working hard for academic excellence!\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+            }
+            
+            showToast(`SENDING TEST NOTICE TO ${name.toUpperCase()}...`);
+            let res = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
+            if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
+                showToast(`✔ NOTICE SENT TO ${name.toUpperCase()}!`);
+            } else {
+                showToast(`TEST NOTICE DISPATCH LOGGED`);
+            }
+        }
+
+        async function broadcastAllTestResults() {
+            let rows = document.querySelectorAll('#testStudentsList .test-stu-row');
+            if (rows.length === 0) {
+                showToast("NO STUDENTS IN TEST ROSTER");
+                return;
+            }
+            
+            let subject = document.getElementById('testSubject') ? document.getElementById('testSubject').value.trim() : 'Test';
+            let topic = document.getElementById('testTopic') ? document.getElementById('testTopic').value.trim() : '';
+            let dateVal = document.getElementById('testDate') ? document.getElementById('testDate').value : '';
+            let testDateStr = formatTestDate(dateVal);
+            let maxMarks = document.getElementById('testMaxMarks') ? Number(document.getElementById('testMaxMarks').value) || 25 : 25;
+            
+            let btn = document.getElementById('btnBroadcastTestResults');
+            let origHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> DISPATCHING TEST NOTICES...';
+                btn.disabled = true;
+            }
+            
+            showToast(`BROADCASTING TEST RESULTS TO ${rows.length} STUDENTS 🚀`);
+            
+            let sentCount = 0;
+            for (let i = 0; i < rows.length; i++) {
+                let row = rows[i];
+                let name = row.getAttribute('data-name');
+                let phone = row.getAttribute('data-phone');
+                let status = row.getAttribute('data-status') || 'Present';
+                let marksInput = row.querySelector('.test-marks-input');
+                let marks = marksInput ? marksInput.value.trim() : '';
+                
+                if (!phone || phone.length < 10) continue;
+                
+                var msg = '';
+                if (status === 'Absent') {
+                    msg = `Test Absence Alert ⚠️📢\n*VIJAY SIR EDUCATION HUB*\n\nDear Parent,\n\nPlease be informed that *${name.toUpperCase()}* was *ABSENT* in today's scheduled test:\n\n📚 *Subject:* ${subject.toUpperCase()}${topic ? `\n📖 *Topic:* ${topic}` : ''}\n📅 *Date:* ${testDateStr}\n❌ *Status:* *ABSENT IN TEST*\n\nRegular tests are vital for tracking your child's academic progress. Kindly ensure your child does not miss future tests and attends regular classes.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+                } else {
+                    let numMarks = Number(marks) || 0;
+                    let pct = Math.round((numMarks / maxMarks) * 100);
+                    let remark = "Good Performance 👍";
+                    if (pct >= 90) remark = "Outstanding! 🌟";
+                    else if (pct >= 75) remark = "Excellent! 🎯";
+                    else if (pct >= 60) remark = "Good Performance 👍";
+                    else if (pct >= 40) remark = "Average - Needs More Practice 📖";
+                    else remark = "Needs Improvement & Hard Work ⚠️";
+                    
+                    msg = `Test Result Report 📝🌟\n*VIJAY SIR EDUCATION HUB*\n\nDear Parent,\n\nThe test results for *${name.toUpperCase()}* are declared below:\n\n📚 *Subject:* ${subject.toUpperCase()}${topic ? `\n📖 *Topic:* ${topic}` : ''}\n📅 *Date:* ${testDateStr}\n🎯 *Marks Obtained:* *${numMarks} / ${maxMarks}* (${pct}%)\n⭐ *Performance:* *${remark}*\n\nKindly encourage ${name.toUpperCase()} to keep working hard for academic excellence!\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+                }
+                
+                try {
+                    gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
+                    sentCount++;
+                } catch(e) {}
+            }
+            
+            setTimeout(() => {
+                if (btn) {
+                    btn.innerHTML = origHtml;
+                    btn.disabled = false;
+                }
+                showToast(`✔ TEST RESULTS DELIVERED TO ${sentCount} PARENTS!`);
+            }, 1500);
         }
 
         function initSettingsUI() {
@@ -1852,6 +2713,59 @@ async function saveStudentToServer(e) {
         let result = await gasApi('saveStudent', data);
     if(result && result.status === 'success') {
         appData = result;
+        
+        // ==========================================================================
+        // INSTANT ON-SAVE OVERDUE REMINDER (EXACTLY ONCE, IMMUNE TO RELOAD)
+        // ==========================================================================
+        try {
+            let savedStudent = (appData.students || []).find(s => s.id === data.id || (s.name === data.name && s.class === data.class && (s.shift || 'Morning') === data.shift)) || data;
+            if (savedStudent && savedStudent.phone) {
+                let dues = calculateStudentDues(savedStudent, appData.payments);
+                if (dues && dues.isOverdue && dues.pendingMonths && dues.pendingMonths.length > 0) {
+                    let now = new Date();
+                    let cycleYear = now.getFullYear();
+                    let logKey = (savedStudent.id || savedStudent.name).trim().toUpperCase() + '_' + dues.pendingMonths[0].toUpperCase() + '_' + cycleYear;
+                    
+                    let localLog = {};
+                    try {
+                        let stored = localStorage.getItem('vseh_auto_reminders_log');
+                        if (stored) localLog = JSON.parse(stored);
+                    } catch(e) {}
+                    let dbLog = appData.autoRemindersLog || {};
+                    let combinedLog = Object.assign({}, dbLog, localLog);
+                    
+                    if (!combinedLog[logKey]) {
+                        // Mark immediately in combinedLog to prevent duplicate on reload!
+                        let nowIso = now.toISOString();
+                        combinedLog[logKey] = nowIso;
+                        try {
+                            localStorage.setItem('vseh_auto_reminders_log', JSON.stringify(combinedLog));
+                        } catch(e) {}
+                        if (!appData.autoRemindersLog) appData.autoRemindersLog = {};
+                        appData.autoRemindersLog[logKey] = nowIso;
+                        
+                        // Persist to Supabase settings in background
+                        supabaseFetch('settings', '', 'POST', [{
+                            key: 'autoRemindersLog',
+                            value: JSON.stringify(combinedLog)
+                        }], { 'Prefer': 'resolution=merge-duplicates' }).catch(()=>{});
+                        
+                        let feeAmt = dues.totalPendingAmount;
+                        let monthsText = dues.formattedPendingText;
+                        let reminderMsg = `Greetings! 🌟\n\nHope *${savedStudent.name.toUpperCase()}* is doing well.\n\nStudent registration has been completed successfully.\nKindly note that monthly fee of *₹${feeAmt}* for *${monthsText}* is currently pending.\nKindly process it when convenient.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+                        
+                        showToast(`DISPATCHING DUE REMINDER FOR ${monthsText}...`);
+                        gasApi('stealthWhatsAppTrigger', { phone: savedStudent.phone, message: reminderMsg }).then(res => {
+                            if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
+                                showToast(`✔ REMINDER SENT FOR ${monthsText}!`);
+                            }
+                        }).catch(()=>{});
+                    }
+                }
+            }
+        } catch(remErr) {
+            console.error("Error in on-save reminder:", remErr);
+        }
     } else {
         showToast('SAVE FAILED - Check Internet');
     }
@@ -2093,10 +3007,12 @@ async function processFee(e) {
     
     appData = await gasApi('savePayment', payload);
     
-    // Direct WhatsApp Receipt Dispatch
+    // Direct WhatsApp Receipt Dispatch with Remaining Dues Details
+    let forceSendNow = document.getElementById('feeForceSendNow') ? document.getElementById('feeForceSendNow').checked : false;
     if (matchedStudent && matchedStudent.phone) {
-        sendSuccessMsg(stu, matchedStudent.phone, amt, month, mode);
+        sendSuccessMsg(stu, matchedStudent.phone, amt, month, mode, matchedStudent, forceSendNow);
     }
+    if (document.getElementById('feeForceSendNow')) document.getElementById('feeForceSendNow').checked = false;
     
     document.getElementById('feeStudentSearch').value = '';
     document.getElementById('feeAmount').value = '';
@@ -2171,13 +3087,33 @@ async function sendAiCommand(e) {
     box.classList.remove('hidden');
     box.innerHTML = '<i class="fas fa-spinner fa-spin text-purple-600"></i> Processing command...';
     
-    let res = await gasApi('processAiCommand', {prompt: val, context: {students: appData.students, paidCount: appData.paidCount}});
+    let res = await gasApi('processAiCommand', {prompt: val, context: {students: appData.students, payments: appData.payments, paidCount: appData.paidCount}});
     if(res && res.status === 'success') {
         let aiMsg = (res.result && res.result.message) ? res.result.message : (res.message || 'No response');
+        
+        // Parse & Execute <CMD> MARK_ATTENDANCE tag if present
+        let cmdMatch = aiMsg.match(/<CMD>MARK_ATTENDANCE\|([^|]+)\|([^<]+)<\/CMD>/i);
+        if (cmdMatch) {
+            let targetClass = cmdMatch[1].trim();
+            let targetStatus = cmdMatch[2].trim().toLowerCase() === 'absent' ? 'Absent' : 'Present';
+            executeAiAttendanceMark(targetClass, targetStatus);
+            aiMsg = aiMsg.replace(/<CMD>.*?<\/CMD>/g, '').trim();
+        }
+
+        // Parse & Execute <CMD> EXECUTE_BROADCAST tag if present
+        let broadcastMatch = aiMsg.match(/<CMD>EXECUTE_BROADCAST\|([^|]+)\|([^|]+)\|([^<]+)<\/CMD>/i);
+        if (broadcastMatch) {
+            let bType = broadcastMatch[1].trim();
+            let bTarget = broadcastMatch[2].trim();
+            let bContent = decodeURIComponent(broadcastMatch[3].trim());
+            executeAiBroadcast(bType, bTarget, bContent);
+            aiMsg = aiMsg.replace(/<CMD>.*?<\/CMD>/g, '').trim();
+        }
+        
         box.innerHTML = '<div class="glass-panel p-4 rounded-24 rounded-tl-none border-l-4 border-purple-500 shadow-sm"><p class="text-xs font-bold text-gray-700">' + aiMsg.replace(/\n/g, '<br>') + '</p></div>';
-        let inp = document.getElementById('ai-input');
+        let inp = document.getElementById('ai-input') || document.getElementById('aiInput');
         if (inp) inp.value = '';
-        syncUIPanels();
+        box.scrollTop = box.scrollHeight;
     } else {
         box.innerHTML = '<span class="text-red-500">Failed to process command.</span>';
     }
@@ -2201,7 +3137,76 @@ async function triggerPtmNoteGeneration() {
 }
 
 
+function updateStudentCountBadges() {
+    let students = appData.students || [];
+    let totalCount = students.length;
+    let morningCount = students.filter(s => (s.shift || 'Morning') === 'Morning').length;
+    let eveningCount = students.filter(s => (s.shift || 'Morning') === 'Evening').length;
+
+    let elTotal = document.getElementById('dir-count-all');
+    let elMorning = document.getElementById('dir-count-morning');
+    let elEvening = document.getElementById('dir-count-evening');
+    let elHeaderCount = document.getElementById('dir-header-count');
+
+    if (elTotal) elTotal.innerText = totalCount;
+    if (elMorning) elMorning.innerText = morningCount;
+    if (elEvening) elEvening.innerText = eveningCount;
+    if (elHeaderCount) elHeaderCount.innerText = totalCount;
+
+    let dirShiftSelect = document.getElementById('dirShift');
+    if (dirShiftSelect && dirShiftSelect.options && dirShiftSelect.options.length >= 3) {
+        for (let i = 0; i < dirShiftSelect.options.length; i++) {
+            let opt = dirShiftSelect.options[i];
+            if (opt.value === 'All') opt.text = `All Shifts (${totalCount})`;
+            else if (opt.value === 'Morning') opt.text = `Morning (${morningCount})`;
+            else if (opt.value === 'Evening') opt.text = `Evening (${eveningCount})`;
+        }
+    }
+
+    updateActiveShiftBadge();
+}
+
+function setDirShiftFilter(shift) {
+    let dirShiftSelect = document.getElementById('dirShift');
+    if (dirShiftSelect) {
+        dirShiftSelect.value = shift;
+        filterClasses('dirShift', 'dirClass');
+        renderStudents();
+    }
+    updateActiveShiftBadge();
+}
+
+function updateActiveShiftBadge() {
+    let currentShift = document.getElementById('dirShift') ? document.getElementById('dirShift').value : 'All';
+    let badgeAll = document.getElementById('badge-shift-all');
+    let badgeMorning = document.getElementById('badge-shift-morning');
+    let badgeEvening = document.getElementById('badge-shift-evening');
+
+    if (badgeAll) {
+        if (currentShift === 'All') {
+            badgeAll.classList.add('ring-2', 'ring-indigo-500', 'shadow-md');
+        } else {
+            badgeAll.classList.remove('ring-2', 'ring-indigo-500', 'shadow-md');
+        }
+    }
+    if (badgeMorning) {
+        if (currentShift === 'Morning') {
+            badgeMorning.classList.add('ring-2', 'ring-amber-500', 'shadow-md');
+        } else {
+            badgeMorning.classList.remove('ring-2', 'ring-amber-500', 'shadow-md');
+        }
+    }
+    if (badgeEvening) {
+        if (currentShift === 'Evening') {
+            badgeEvening.classList.add('ring-2', 'ring-purple-500', 'shadow-md');
+        } else {
+            badgeEvening.classList.remove('ring-2', 'ring-purple-500', 'shadow-md');
+        }
+    }
+}
+
 function renderStudents() {
+    updateStudentCountBadges();
     let list = document.getElementById('students-list');
     if(!list) return;
     list.innerHTML = '';

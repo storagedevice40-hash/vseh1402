@@ -105,3 +105,353 @@ body {
     font-size: 7px !important;
     margin-right: 3px !important;
 }
+
+
+/* ==========================================================================
+   VSEH PRO - 10 ULTRA-ADVANCED THEMES ENGINE (+ ORIGINAL CLASSIC)
+   ========================================================================== */
+
+/* 1. CYBERPUNK NEON 2077 */
+body[data-theme="cyberpunk"] {
+    background: #080814 radial-gradient(circle at 10% 15%, rgba(6, 182, 212, 0.2) 0%, transparent 40%), radial-gradient(circle at 90% 85%, rgba(244, 63, 94, 0.2) 0%, transparent 40%) !important;
+    color: #f1f5f9 !important;
+}
+body[data-theme="cyberpunk"] .glass-panel {
+    background: rgba(13, 13, 26, 0.88) !important;
+    border: 1px solid rgba(6, 182, 212, 0.4) !important;
+    box-shadow: 0 8px 30px rgba(6, 182, 212, 0.15), inset 0 0 15px rgba(6, 182, 212, 0.06) !important;
+}
+body[data-theme="cyberpunk"] .glass-nav {
+    background: rgba(10, 10, 20, 0.96) !important;
+    border-top: 1px solid rgba(244, 63, 94, 0.4) !important;
+    box-shadow: 0 -5px 25px rgba(244, 63, 94, 0.2) !important;
+}
+body[data-theme="cyberpunk"] .bg-white {
+    background-color: #111122 !important;
+    border-color: #1f1f3d !important;
+    color: #f8fafc !important;
+}
+body[data-theme="cyberpunk"] .text-gray-800, body[data-theme="cyberpunk"] .text-gray-900 { color: #ffffff !important; }
+body[data-theme="cyberpunk"] .text-gray-500, body[data-theme="cyberpunk"] .text-gray-400 { color: #94a3b8 !important; }
+body[data-theme="cyberpunk"] .text-grad {
+    background: linear-gradient(to right, #00f2fe, #4facfe, #f72585) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="cyberpunk"] .mobile-input {
+    background-color: #0b0b1a !important;
+    border: 2px solid rgba(6, 182, 212, 0.35) !important;
+    color: #00f2fe !important;
+}
+body[data-theme="cyberpunk"] .mobile-input:focus {
+    border-color: #00f2fe !important;
+    box-shadow: 0 0 15px rgba(0, 242, 254, 0.4) !important;
+}
+body[data-theme="cyberpunk"] #floatingFeeBtn {
+    background: linear-gradient(135deg, #00f2fe, #0ea5e9) !important;
+    box-shadow: 0 0 25px rgba(0, 242, 254, 0.5) !important;
+}
+
+/* 2. MIDNIGHT OBSIDIAN & ROYAL GOLD */
+body[data-theme="gold-obsidian"] {
+    background: #0a0908 radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.15) 0%, transparent 50%), radial-gradient(circle at 100% 100%, rgba(180, 83, 9, 0.12) 0%, transparent 50%) !important;
+    color: #fef3c7 !important;
+}
+body[data-theme="gold-obsidian"] .glass-panel {
+    background: rgba(20, 18, 16, 0.92) !important;
+    border: 1px solid rgba(245, 158, 11, 0.35) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), inset 0 0 15px rgba(245, 158, 11, 0.05) !important;
+}
+body[data-theme="gold-obsidian"] .glass-nav {
+    background: rgba(16, 14, 12, 0.98) !important;
+    border-top: 1px solid rgba(245, 158, 11, 0.35) !important;
+    box-shadow: 0 -5px 25px rgba(245, 158, 11, 0.18) !important;
+}
+body[data-theme="gold-obsidian"] .bg-white {
+    background-color: #181614 !important;
+    border-color: #292524 !important;
+    color: #fef3c7 !important;
+}
+body[data-theme="gold-obsidian"] .text-gray-800, body[data-theme="gold-obsidian"] .text-gray-900 { color: #fef08a !important; }
+body[data-theme="gold-obsidian"] .text-gray-500, body[data-theme="gold-obsidian"] .text-gray-400 { color: #d6d3d1 !important; }
+body[data-theme="gold-obsidian"] .text-grad {
+    background: linear-gradient(135deg, #fef08a, #f59e0b, #d97706) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="gold-obsidian"] .mobile-input {
+    background-color: #12100e !important;
+    border: 2px solid rgba(245, 158, 11, 0.35) !important;
+    color: #fef08a !important;
+}
+body[data-theme="gold-obsidian"] .mobile-input:focus {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.35) !important;
+}
+body[data-theme="gold-obsidian"] #floatingFeeBtn {
+    background: linear-gradient(135deg, #f59e0b, #b45309) !important;
+    box-shadow: 0 0 25px rgba(245, 158, 11, 0.5) !important;
+}
+
+/* 3. AURORA BOREALIS HOLOGRAPHIC */
+body[data-theme="aurora"] {
+    background: #031219 radial-gradient(circle at 15% 20%, rgba(20, 184, 166, 0.22) 0%, transparent 45%), radial-gradient(circle at 85% 80%, rgba(139, 92, 246, 0.2) 0%, transparent 45%) !important;
+    color: #ecfeff !important;
+}
+body[data-theme="aurora"] .glass-panel {
+    background: rgba(6, 26, 36, 0.85) !important;
+    border: 1px solid rgba(45, 212, 191, 0.35) !important;
+    box-shadow: 0 10px 30px rgba(20, 184, 166, 0.15) !important;
+}
+body[data-theme="aurora"] .glass-nav {
+    background: rgba(4, 18, 26, 0.96) !important;
+    border-top: 1px solid rgba(45, 212, 191, 0.35) !important;
+    box-shadow: 0 -5px 25px rgba(20, 184, 166, 0.18) !important;
+}
+body[data-theme="aurora"] .bg-white {
+    background-color: #08212e !important;
+    border-color: #0e374c !important;
+    color: #ecfeff !important;
+}
+body[data-theme="aurora"] .text-gray-800, body[data-theme="aurora"] .text-gray-900 { color: #f0fdfa !important; }
+body[data-theme="aurora"] .text-gray-500, body[data-theme="aurora"] .text-gray-400 { color: #99f6e4 !important; }
+body[data-theme="aurora"] .text-grad {
+    background: linear-gradient(135deg, #2dd4bf, #06b6d4, #a78bfa) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="aurora"] .mobile-input {
+    background-color: #051924 !important;
+    border: 2px solid rgba(45, 212, 191, 0.35) !important;
+    color: #2dd4bf !important;
+}
+
+/* 4. SUNSET CRIMSON & VIOLET BLAZE */
+body[data-theme="sunset-blaze"] {
+    background: #140718 radial-gradient(circle at 10% 10%, rgba(244, 63, 94, 0.22) 0%, transparent 40%), radial-gradient(circle at 90% 90%, rgba(249, 115, 22, 0.22) 0%, transparent 40%) !important;
+    color: #fff1f2 !important;
+}
+body[data-theme="sunset-blaze"] .glass-panel {
+    background: rgba(28, 12, 34, 0.88) !important;
+    border: 1px solid rgba(244, 63, 94, 0.35) !important;
+    box-shadow: 0 10px 30px rgba(244, 63, 94, 0.15) !important;
+}
+body[data-theme="sunset-blaze"] .glass-nav {
+    background: rgba(18, 8, 22, 0.96) !important;
+    border-top: 1px solid rgba(249, 115, 22, 0.35) !important;
+    box-shadow: 0 -5px 25px rgba(244, 63, 94, 0.2) !important;
+}
+body[data-theme="sunset-blaze"] .bg-white {
+    background-color: #250f2c !important;
+    border-color: #3b1946 !important;
+    color: #fff1f2 !important;
+}
+body[data-theme="sunset-blaze"] .text-gray-800, body[data-theme="sunset-blaze"] .text-gray-900 { color: #fff1f2 !important; }
+body[data-theme="sunset-blaze"] .text-gray-500, body[data-theme="sunset-blaze"] .text-gray-400 { color: #fda4af !important; }
+body[data-theme="sunset-blaze"] .text-grad {
+    background: linear-gradient(to right, #ff416c, #ff4b2b, #f97316) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="sunset-blaze"] .mobile-input {
+    background-color: #17081c !important;
+    border: 2px solid rgba(244, 63, 94, 0.35) !important;
+    color: #fda4af !important;
+}
+
+/* 5. EMERALD MATRIX & FOREST ZEN */
+body[data-theme="emerald-zen"] {
+    background: #04140c radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.2) 0%, transparent 50%), radial-gradient(circle at 100% 100%, rgba(5, 150, 105, 0.15) 0%, transparent 50%) !important;
+    color: #ecfdf5 !important;
+}
+body[data-theme="emerald-zen"] .glass-panel {
+    background: rgba(6, 28, 18, 0.88) !important;
+    border: 1px solid rgba(16, 185, 129, 0.35) !important;
+    box-shadow: 0 10px 30px rgba(16, 185, 129, 0.15) !important;
+}
+body[data-theme="emerald-zen"] .glass-nav {
+    background: rgba(4, 20, 12, 0.96) !important;
+    border-top: 1px solid rgba(16, 185, 129, 0.35) !important;
+    box-shadow: 0 -5px 25px rgba(16, 185, 129, 0.18) !important;
+}
+body[data-theme="emerald-zen"] .bg-white {
+    background-color: #082417 !important;
+    border-color: #0f3d28 !important;
+    color: #ecfdf5 !important;
+}
+body[data-theme="emerald-zen"] .text-gray-800, body[data-theme="emerald-zen"] .text-gray-900 { color: #f0fdf4 !important; }
+body[data-theme="emerald-zen"] .text-gray-500, body[data-theme="emerald-zen"] .text-gray-400 { color: #86efac !important; }
+body[data-theme="emerald-zen"] .text-grad {
+    background: linear-gradient(to right, #34d399, #10b981, #047857) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="emerald-zen"] .mobile-input {
+    background-color: #05180f !important;
+    border: 2px solid rgba(16, 185, 129, 0.35) !important;
+    color: #34d399 !important;
+}
+
+/* 6. DEEP OCEAN & ELECTRIC AQUA */
+body[data-theme="deep-ocean"] {
+    background: #030a16 radial-gradient(circle at 30% 20%, rgba(14, 165, 233, 0.22) 0%, transparent 45%), radial-gradient(circle at 70% 80%, rgba(37, 99, 235, 0.2) 0%, transparent 45%) !important;
+    color: #f0f9ff !important;
+}
+body[data-theme="deep-ocean"] .glass-panel {
+    background: rgba(5, 20, 42, 0.88) !important;
+    border: 1px solid rgba(14, 165, 233, 0.35) !important;
+    box-shadow: 0 10px 30px rgba(14, 165, 233, 0.15) !important;
+}
+body[data-theme="deep-ocean"] .glass-nav {
+    background: rgba(3, 14, 30, 0.96) !important;
+    border-top: 1px solid rgba(14, 165, 233, 0.35) !important;
+    box-shadow: 0 -5px 25px rgba(14, 165, 233, 0.18) !important;
+}
+body[data-theme="deep-ocean"] .bg-white {
+    background-color: #082245 !important;
+    border-color: #0f366c !important;
+    color: #f0f9ff !important;
+}
+body[data-theme="deep-ocean"] .text-gray-800, body[data-theme="deep-ocean"] .text-gray-900 { color: #f0f9ff !important; }
+body[data-theme="deep-ocean"] .text-gray-500, body[data-theme="deep-ocean"] .text-gray-400 { color: #7dd3fc !important; }
+body[data-theme="deep-ocean"] .text-grad {
+    background: linear-gradient(to right, #38bdf8, #0ea5e9, #2563eb) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="deep-ocean"] .mobile-input {
+    background-color: #041224 !important;
+    border: 2px solid rgba(14, 165, 233, 0.35) !important;
+    color: #38bdf8 !important;
+}
+
+/* 7. COSMIC GALAXY & STARLIGHT PURPLE */
+body[data-theme="cosmic-galaxy"] {
+    background: #0a0218 radial-gradient(circle at 40% 15%, rgba(168, 85, 247, 0.25) 0%, transparent 45%), radial-gradient(circle at 85% 85%, rgba(99, 102, 241, 0.2) 0%, transparent 45%) !important;
+    color: #faf5ff !important;
+}
+body[data-theme="cosmic-galaxy"] .glass-panel {
+    background: rgba(22, 7, 46, 0.88) !important;
+    border: 1px solid rgba(168, 85, 247, 0.35) !important;
+    box-shadow: 0 10px 30px rgba(168, 85, 247, 0.18) !important;
+}
+body[data-theme="cosmic-galaxy"] .glass-nav {
+    background: rgba(14, 4, 30, 0.96) !important;
+    border-top: 1px solid rgba(168, 85, 247, 0.35) !important;
+    box-shadow: 0 -5px 25px rgba(168, 85, 247, 0.2) !important;
+}
+body[data-theme="cosmic-galaxy"] .bg-white {
+    background-color: #1e093e !important;
+    border-color: #331366 !important;
+    color: #faf5ff !important;
+}
+body[data-theme="cosmic-galaxy"] .text-gray-800, body[data-theme="cosmic-galaxy"] .text-gray-900 { color: #f3e8ff !important; }
+body[data-theme="cosmic-galaxy"] .text-gray-500, body[data-theme="cosmic-galaxy"] .text-gray-400 { color: #d8b4fe !important; }
+body[data-theme="cosmic-galaxy"] .text-grad {
+    background: linear-gradient(135deg, #c084fc, #a855f7, #6366f1) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="cosmic-galaxy"] .mobile-input {
+    background-color: #120426 !important;
+    border: 2px solid rgba(168, 85, 247, 0.35) !important;
+    color: #d8b4fe !important;
+}
+
+/* 8. TOKYO CHERRY BLOSSOM (SAKURA FROST) */
+body[data-theme="sakura-frost"] {
+    background: #fdf4f8 radial-gradient(circle at 15% 15%, rgba(244, 114, 182, 0.2) 0%, transparent 45%), radial-gradient(circle at 85% 85%, rgba(251, 113, 133, 0.18) 0%, transparent 45%) !important;
+    color: #831843 !important;
+}
+body[data-theme="sakura-frost"] .glass-panel {
+    background: rgba(255, 255, 255, 0.92) !important;
+    border: 1px solid rgba(244, 114, 182, 0.35) !important;
+    box-shadow: 0 10px 25px rgba(244, 114, 182, 0.12) !important;
+}
+body[data-theme="sakura-frost"] .glass-nav {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-top: 1px solid rgba(244, 114, 182, 0.35) !important;
+    box-shadow: 0 -5px 25px rgba(244, 114, 182, 0.15) !important;
+}
+body[data-theme="sakura-frost"] .bg-white {
+    background-color: #ffffff !important;
+    border-color: #fbcfe8 !important;
+    color: #831843 !important;
+}
+body[data-theme="sakura-frost"] .text-gray-800, body[data-theme="sakura-frost"] .text-gray-900 { color: #831843 !important; }
+body[data-theme="sakura-frost"] .text-gray-500, body[data-theme="sakura-frost"] .text-gray-400 { color: #9d174d !important; }
+body[data-theme="sakura-frost"] .text-grad {
+    background: linear-gradient(to right, #ec4899, #db2777, #be185d) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="sakura-frost"] .mobile-input {
+    background-color: #fff1f2 !important;
+    border: 2px solid #fbcfe8 !important;
+    color: #831843 !important;
+}
+
+/* 9. RETRO 80s SYNTHWAVE & OUTRUN */
+body[data-theme="synthwave"] {
+    background: #140426 radial-gradient(circle at 50% 10%, rgba(255, 0, 127, 0.25) 0%, transparent 45%), radial-gradient(circle at 50% 90%, rgba(0, 245, 212, 0.2) 0%, transparent 45%) !important;
+    color: #fce7f3 !important;
+}
+body[data-theme="synthwave"] .glass-panel {
+    background: rgba(28, 8, 48, 0.88) !important;
+    border: 1px solid rgba(255, 0, 127, 0.4) !important;
+    box-shadow: 0 10px 30px rgba(255, 0, 127, 0.18), inset 0 0 15px rgba(0, 245, 212, 0.05) !important;
+}
+body[data-theme="synthwave"] .glass-nav {
+    background: rgba(18, 4, 32, 0.96) !important;
+    border-top: 1px solid rgba(0, 245, 212, 0.4) !important;
+    box-shadow: 0 -5px 25px rgba(255, 0, 127, 0.22) !important;
+}
+body[data-theme="synthwave"] .bg-white {
+    background-color: #23083e !important;
+    border-color: #3f106e !important;
+    color: #fce7f3 !important;
+}
+body[data-theme="synthwave"] .text-gray-800, body[data-theme="synthwave"] .text-gray-900 { color: #fdf2f8 !important; }
+body[data-theme="synthwave"] .text-gray-500, body[data-theme="synthwave"] .text-gray-400 { color: #f472b6 !important; }
+body[data-theme="synthwave"] .text-grad {
+    background: linear-gradient(to right, #ff007f, #b5179e, #00f5d4) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+body[data-theme="synthwave"] .mobile-input {
+    background-color: #1a0630 !important;
+    border: 2px solid rgba(255, 0, 127, 0.35) !important;
+    color: #00f5d4 !important;
+}
+
+/* 10. TITANIUM SILVER & MODERN NEUMORPHISM */
+body[data-theme="neumorphic"] {
+    background: #e2e8f0 !important;
+    color: #1e293b !important;
+}
+body[data-theme="neumorphic"] .glass-panel {
+    background: #e2e8f0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    box-shadow: 8px 8px 18px #cbd5e1, -8px -8px 18px #ffffff !important;
+}
+body[data-theme="neumorphic"] .glass-nav {
+    background: #e2e8f0 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.9) !important;
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.08) !important;
+}
+body[data-theme="neumorphic"] .mobile-input {
+    background: #e2e8f0 !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: inset 4px 4px 8px #cbd5e1, inset -4px -4px 8px #ffffff !important;
+    color: #0f172a !important;
+}
+body[data-theme="neumorphic"] .text-grad {
+    background: linear-gradient(to right, #334155, #0f172a) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+/* Shared theme transition */
+body, .glass-panel, .glass-nav, .mobile-input, header, nav {
+    transition: background 0.35s ease, background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease, color 0.35s ease !important;
+}
