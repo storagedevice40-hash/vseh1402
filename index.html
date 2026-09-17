@@ -164,7 +164,24 @@
                 <p class="text-center text-gray-400 text-xs font-bold mt-10">Select a class to mark attendance</p>
             </div>
             
-            <button onclick="submitAttendance()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-black text-sm mt-2 shadow-lg active:scale-95 transition uppercase tracking-widest flex items-center justify-center">
+            <!-- NIGHT MODE / QUIET HOURS NOTICE FOR ATTENDANCE -->
+            <div id="attNightNotice" class="hidden p-3.5 mb-3 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 transition-all shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 text-xs shadow-sm"><i class="fas fa-moon"></i></span>
+                        <div>
+                            <p class="text-[11px] font-black text-amber-900 dark:text-amber-200 uppercase tracking-tight">🌙 Quiet Hours Active (Night)</p>
+                            <p class="text-[9px] font-bold text-amber-700 dark:text-amber-300">Absent alerts will auto-send tomorrow at 8:00 AM (No app opening needed)</p>
+                        </div>
+                    </div>
+                    <label class="inline-flex items-center space-x-1.5 cursor-pointer shrink-0 ml-2 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-amber-200 dark:border-amber-700 shadow-sm">
+                        <input type="checkbox" id="attForceSendNow" class="rounded text-amber-600 focus:ring-0">
+                        <span class="text-[9px] font-black text-amber-900 dark:text-amber-200 uppercase tracking-wider">Send Now</span>
+                    </label>
+                </div>
+            </div>
+
+            <button onclick="submitAttendance()" id="attSubmitBtn" class="w-full bg-blue-600 text-white py-4 rounded-xl font-black text-sm mt-2 shadow-lg active:scale-95 transition uppercase tracking-widest flex items-center justify-center">
                 SAVE & SEND ALERTS <i class="fas fa-paper-plane ml-2 text-lg"></i>
             </button>
         </section>
@@ -441,35 +458,87 @@
                     <i class="fas fa-chevron-right text-pink-400"></i>
                 </button>
 
-                <!-- WHATSAPP SETTINGS (Always visible on main menu) -->
+                <!-- WHATSAPP SETTINGS & GATEWAY CONTROLLER -->
                 <div class="glass-panel rounded-32 p-6">
-                    <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-                        <h3 class="text-10 font-black text-green-600 tracking-widest uppercase"><i class="fab fa-whatsapp mr-1.5"></i> WhatsApp API config</h3>
-                        <button type="button" onclick="toggleWaLock()" class="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner">
-                            <i id="wa-lock-icon" class="fas fa-lock text-xs"></i>
-                        </button>
+                    <div class="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-800 pb-3">
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-10 font-black text-green-600 tracking-widest uppercase"><i class="fab fa-whatsapp mr-1.5"></i> WhatsApp Gateway</h3>
+                            <span id="waStatusBadge" class="text-[9px] font-black px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">Checking...</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button type="button" onclick="checkInstanceHealth()" title="Refresh Gateway Status" class="w-7 h-7 bg-green-50 dark:bg-slate-800 rounded-full flex items-center justify-center text-green-600 active:scale-90 transition shadow-sm border border-green-100 dark:border-slate-700">
+                                <i class="fas fa-arrows-rotate text-xs"></i>
+                            </button>
+                            <button type="button" onclick="toggleWaLock()" class="w-7 h-7 bg-red-50 rounded-full flex items-center justify-center text-red-500 active:scale-90 transition shadow-inner">
+                                <i id="wa-lock-icon" class="fas fa-lock text-xs"></i>
+                            </button>
+                        </div>
                     </div>
+
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Instance ID</label>
-                            <input type="text" id="waInstanceId" class="mobile-input wa-setting" placeholder="e.g. 123456" disabled>
+                            <div class="flex justify-between items-center ml-1 mb-1.5">
+                                <label class="block text-10 font-black text-gray-500 uppercase tracking-widest">Instance ID</label>
+                                <span class="text-[9px] font-bold text-gray-400">Free Trial / Active ID</span>
+                            </div>
+                            <input type="text" id="waInstanceId" class="mobile-input wa-setting" placeholder="e.g. instance175857" disabled>
                         </div>
                         <div>
-                            <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Access Token</label>
-                            <input type="text" id="waToken" class="mobile-input wa-setting" placeholder="e.g. abc123def456" disabled>
+                            <div class="flex justify-between items-center ml-1 mb-1.5">
+                                <label class="block text-10 font-black text-gray-500 uppercase tracking-widest">Access Token</label>
+                                <span class="text-[9px] font-bold text-gray-400">Secret Token</span>
+                            </div>
+                            <input type="text" id="waToken" class="mobile-input wa-setting" placeholder="e.g. 7yqm7bhojwpovbu4" disabled>
                         </div>
                     </div>
-                                        <button type="button" onclick="saveWaSettings()" id="btn-save-wa" disabled class="w-full bg-green-600 text-white py-4 rounded-2xl font-black mt-5 disabled:opacity-30 transition-all text-[10px] tracking-widest uppercase shadow-lg active:scale-95">Save WhatsApp Settings</button>
-                    
+
+                    <button type="button" onclick="saveWaSettings()" id="btn-save-wa" disabled class="w-full bg-green-600 text-white py-4 rounded-2xl font-black mt-5 disabled:opacity-30 transition-all text-[10px] tracking-widest uppercase shadow-lg active:scale-95 flex items-center justify-center">
+                        <i class="fas fa-floppy-disk mr-2"></i> Save & Verify WhatsApp Gateway
+                    </button>
+
+                    <!-- MESSAGE SCHEDULE TIMER TOGGLE (Enable / Disable) -->
+                    <div class="mt-5 pt-4 border-t border-gray-100 dark:border-gray-800">
+                        <div class="flex justify-between items-center">
+                            <div class="pr-2">
+                                <p class="text-xs font-black text-gray-800 dark:text-gray-100 uppercase tracking-wide flex items-center">
+                                    <i class="fas fa-clock text-amber-500 mr-2"></i> Message Schedule Timer
+                                </p>
+                                <p class="text-[9px] font-bold text-gray-400 mt-1 leading-relaxed" id="waTimerDesc">
+                                    Quiet Hours (9 PM - 8 AM): Hold & Auto-Send at 8 AM
+                                </p>
+                            </div>
+                            <button type="button" onclick="toggleWaTimer()" id="waTimerBtn" class="w-14 h-8 bg-amber-500 rounded-full relative transition-all duration-300 shadow-inner flex items-center p-1 shrink-0">
+                                <div class="w-6 h-6 bg-white rounded-full transition-all shadow-md flex items-center justify-center text-[8px] text-amber-600 font-black" id="waTimerThumb">ON</div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- FAILED MESSAGES RETRY CONTAINER (Appears if UltraMsg trial expired during a send) -->
+                    <div id="waFailedBox" class="hidden mt-4 p-3 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[10px] font-black text-red-700 dark:text-red-300 uppercase flex items-center">
+                                <i class="fas fa-triangle-exclamation mr-1.5 text-red-500"></i> <span id="waFailedCount">0</span> Failed Message(s)
+                            </span>
+                            <button type="button" onclick="retryFailedMessages()" id="btn-retry-failed" class="bg-red-600 text-white px-3 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-wider active:scale-95 transition shadow-sm">
+                                <i class="fas fa-rotate-right mr-1"></i> Retry All
+                            </button>
+                        </div>
+                        <p class="text-[9px] text-red-600 dark:text-red-400">Some messages failed because the UltraMsg trial expired. Save your new instance above and tap "Retry All".</p>
+                    </div>
+
                     <!-- TEST WHATSAPP MESSAGE (Instant Delivery Check) -->
-                    <div class="mt-5 pt-4 border-t border-gray-100">
-                        <label class="block text-10 font-black text-gray-500 uppercase tracking-widest ml-1 mb-1.5">Test WhatsApp Connection</label>
+                    <div class="mt-5 pt-4 border-t border-gray-100 dark:border-gray-800">
+                        <div class="flex justify-between items-center ml-1 mb-1.5">
+                            <label class="block text-10 font-black text-gray-500 uppercase tracking-widest">Test WhatsApp Delivery</label>
+                            <span class="text-[8px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">⚡ Direct 24/7 Ping</span>
+                        </div>
                         <div class="flex space-x-2">
                             <input type="tel" id="waTestPhone" class="mobile-input flex-1 text-xs" placeholder="10-DIGIT MOBILE NUMBER" maxlength="10">
                             <button type="button" onclick="testWaSend()" id="btn-test-wa" class="bg-indigo-600 text-white px-4 py-3 rounded-2xl font-black text-[9px] uppercase tracking-widest active:scale-95 transition whitespace-nowrap shadow-md">
                                 <i class="fas fa-paper-plane mr-1"></i> Test Send
                             </button>
                         </div>
+                        <p class="text-[9px] text-gray-400 mt-1.5 leading-tight">Yeh test button hamesha direct 24/7 ping bhejta hai taaki UltraMsg token verify ho sake. Schedule Timer student fees receipts par lagta hai.</p>
                         <p id="waTestResult" class="text-[9px] font-bold mt-2 hidden"></p>
                     </div>
                 </div>
@@ -755,6 +824,6 @@
     </div>
 
     <script src="./names.js"></script>
-    <script src="./script.js?v=3.7"></script>
+    <script src="./script.js?v=4.0"></script>
 </body>
 </html>

@@ -291,7 +291,21 @@ async function gasApi(action, payload = null) {
                         autoRemindersLog = typeof remRow.value === 'string' ? JSON.parse(remRow.value) : remRow.value;
                     } catch(e) {}
                 }
+                const timerRow = rawSettings.find(r => r.key === 'waTimerEnabled');
+                var waTimerEnabled = true;
+                if (timerRow && timerRow.value !== undefined) {
+                    waTimerEnabled = String(timerRow.value).toLowerCase() === 'true';
+                } else {
+                    let localTimer = localStorage.getItem('vseh_wa_timer_enabled');
+                    if (localTimer !== null) waTimerEnabled = localTimer === 'true';
+                }
             }
+
+            let failedMessages = [];
+            try {
+                let storedF = localStorage.getItem('vseh_failed_wa_messages');
+                if (storedF) failedMessages = JSON.parse(storedF);
+            } catch(e) {}
 
             return {
                 status: 'success',
@@ -300,6 +314,8 @@ async function gasApi(action, payload = null) {
                 attendance,
                 feeSettings,
                 waSettings,
+                waTimerEnabled: waTimerEnabled !== false,
+                failedMessages: Array.isArray(failedMessages) ? failedMessages : [],
                 recentDismissedIds: Array.isArray(recentDismissedIds) ? recentDismissedIds : [],
                 autoRemindersLog: autoRemindersLog && typeof autoRemindersLog === 'object' ? autoRemindersLog : {},
                 paidCount
@@ -462,7 +478,7 @@ async function gasApi(action, payload = null) {
             let inst = (appData.waSettings && appData.waSettings.instanceId) ? appData.waSettings.instanceId : 'instance175857';
             let tok = (appData.waSettings && appData.waSettings.token) ? appData.waSettings.token : '7yqm7bhojwpovbu4';
 
-            // 1. Try Vercel Serverless Function Proxy (bypasses Cloudflare)
+            // 1. Try Vercel Serverless Function Proxy (bypasses Cloudflare & CORS)
             try {
                 const res = await fetch('/api?action=stealthWhatsAppTrigger', {
                     method: 'POST',
@@ -474,7 +490,8 @@ async function gasApi(action, payload = null) {
                 });
                 if (res.ok) {
                     const resData = await res.json();
-                    if (resData && resData.status === 'success') return resData;
+                    if (resData && (resData.status === 'success' || resData.sent === 'true' || resData.sent === true)) return resData;
+                    if (resData && resData.status === 'error') return resData;
                 }
             } catch(e) {
                 console.warn("Vercel proxy failed, trying fallback:", e);
@@ -489,7 +506,14 @@ async function gasApi(action, payload = null) {
                     body: new URLSearchParams({ token: tok, to: cleanPhone, body: message })
                 });
                 const text = await resp.text();
-                return { status: 'success', message: 'Sent', apiResponse: text };
+                let parsed = null;
+                try { parsed = JSON.parse(text); } catch(err){}
+                if (parsed && (parsed.sent === 'true' || parsed.sent === true || (parsed.id && !parsed.error))) {
+                    return { status: 'success', sent: 'true', message: 'Sent', apiResponse: parsed };
+                } else {
+                    let errMsg = (parsed && (parsed.error || parsed.message)) || text || 'UltraMsg rejected dispatch';
+                    return { status: 'error', message: errMsg, apiResponse: parsed || text };
+                }
             } catch(e) {
                 console.error("Direct UltraMsg error:", e);
             }
@@ -854,17 +878,25 @@ async function executeAiBroadcast(bType, bTarget, bContent) {
     showToast(`BROADCASTING TO ${targets.length} STUDENTS 🚀`);
     
     let sentCount = 0;
+    let failCount = 0;
     for (let i = 0; i < targets.length; i++) {
         let s = targets[i];
         try {
-            gasApi('stealthWhatsAppTrigger', { phone: s.phone, message: formattedMsg });
-            sentCount++;
-        } catch(e) {}
+            let res = await gasApi('stealthWhatsAppTrigger', { phone: s.phone, message: formattedMsg });
+            let ok = notifyWhatsAppStatus(res, s.name, s.phone, 'Broadcast Notice', { message: formattedMsg });
+            if (ok) sentCount++;
+            else failCount++;
+        } catch(e) {
+            failCount++;
+        }
+        if (i < targets.length - 1) await new Promise(r => setTimeout(r, 1200));
     }
     
-    setTimeout(() => {
+    if (failCount > 0) {
+        showToast(`⚠️ BROADCAST: ${sentCount} SENT, ${failCount} FAILED. Check Gateway!`);
+    } else {
         showToast(`✔ BROADCAST SENT TO ${sentCount} STUDENTS!`);
-    }, 1200);
+    }
 }
 
 function executeAiAttendanceMark(targetClass, targetStatus) {
@@ -1160,6 +1192,7 @@ function syncUIPanels() {
     initSettingsUI();
     runAutopilotDueCheck(); 
     checkFeeNightNotice();
+    checkAttNightNotice();
     updateDashboard();
     if(document.getElementById('dirShift')) filterClasses('dirShift', 'dirClass'); 
     if(document.getElementById('attShift')) filterClasses('attShift', 'attClass');
@@ -1228,12 +1261,227 @@ function syncUIPanels() {
             if (!notice) return;
             let hour = new Date().getHours();
             let isNight = (hour >= 21 || hour < 8);
-            if (isNight) {
+            let timerActive = appData.waTimerEnabled !== false;
+
+            if (timerActive && isNight) {
                 notice.classList.remove('hidden');
                 if (btn) btn.innerHTML = 'SAVE & QUEUE FOR 8 AM <i class="fas fa-moon ml-2 text-lg"></i>';
+            } else if (!timerActive) {
+                notice.classList.add('hidden');
+                if (btn) btn.innerHTML = 'SAVE & SEND INSTANTLY <i class="fas fa-bolt ml-2 text-lg"></i>';
             } else {
                 notice.classList.add('hidden');
                 if (btn) btn.innerHTML = 'SAVE & AUTO DISPATCH <i class="fas fa-robot ml-2 text-lg"></i>';
+            }
+        }
+
+        function checkAttNightNotice() {
+            let notice = document.getElementById('attNightNotice');
+            let btn = document.getElementById('attSubmitBtn');
+            let hour = new Date().getHours();
+            let isNight = (hour >= 21 || hour < 8);
+            let timerActive = appData.waTimerEnabled !== false;
+
+            if (notice) {
+                if (timerActive && isNight) {
+                    notice.classList.remove('hidden');
+                } else {
+                    notice.classList.add('hidden');
+                }
+            }
+
+            if (btn) {
+                if (timerActive && isNight) {
+                    btn.innerHTML = 'SAVE & QUEUE ALERTS FOR 8 AM <i class="fas fa-moon ml-2 text-lg"></i>';
+                } else if (!timerActive) {
+                    btn.innerHTML = 'SAVE & SEND INSTANTLY <i class="fas fa-bolt ml-2 text-lg"></i>';
+                } else {
+                    btn.innerHTML = 'SAVE & SEND ALERTS <i class="fas fa-paper-plane ml-2 text-lg"></i>';
+                }
+            }
+        }
+
+        async function checkInstanceHealth(customInst = null, customTok = null) {
+            let inst = customInst || (appData.waSettings && appData.waSettings.instanceId) || 'instance175857';
+            let tok = customTok || (appData.waSettings && appData.waSettings.token) || '7yqm7bhojwpovbu4';
+            let badge = document.getElementById('waStatusBadge');
+            if (!badge) return;
+
+            badge.className = 'text-[9px] font-black px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 animate-pulse';
+            badge.innerText = 'Checking...';
+
+            try {
+                let apiUrl = `https://api.ultramsg.com/${inst}/instance/status?token=${tok}`;
+                let res = await fetch(apiUrl);
+                let data = await res.json();
+
+                if (data && data.status && data.status.accountStatus && data.status.accountStatus.status === 'authenticated') {
+                    badge.className = 'text-[9px] font-black px-2.5 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200 flex items-center shadow-sm';
+                    badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5 animate-ping"></span> CONNECTED (Active)';
+                    return true;
+                } else if (data && data.error) {
+                    badge.className = 'text-[9px] font-black px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 flex items-center shadow-sm';
+                    badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5"></span> EXPIRED / STOPPED';
+                    return false;
+                } else {
+                    badge.className = 'text-[9px] font-black px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 flex items-center shadow-sm';
+                    badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5"></span> DISCONNECTED';
+                    return false;
+                }
+            } catch(e) {
+                badge.className = 'text-[9px] font-black px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200';
+                badge.innerText = 'STATUS UNKNOWN';
+                return null;
+            }
+        }
+
+        function toggleWaTimer() {
+            appData.waTimerEnabled = !appData.waTimerEnabled;
+            try {
+                localStorage.setItem('vseh_wa_timer_enabled', String(appData.waTimerEnabled));
+            } catch(e) {}
+            
+            supabaseFetch('settings', '', 'POST', [{
+                key: 'waTimerEnabled',
+                value: String(appData.waTimerEnabled)
+            }], { 'Prefer': 'resolution=merge-duplicates' }).catch(()=>{});
+
+            updateWaTimerUI();
+            checkFeeNightNotice();
+            checkAttNightNotice();
+
+            if (appData.waTimerEnabled) {
+                showToast("⏱️ TIMER ENABLED: Night messages will hold for 8:00 AM auto-dispatch");
+            } else {
+                showToast("⚡ 24/7 INSTANT MODE: Timer Disabled. All messages send immediately!");
+            }
+        }
+
+        function updateWaTimerUI() {
+            let isEnabled = appData.waTimerEnabled !== false;
+            let btn = document.getElementById('waTimerBtn');
+            let thumb = document.getElementById('waTimerThumb');
+            let desc = document.getElementById('waTimerDesc');
+
+            if (btn && thumb) {
+                if (isEnabled) {
+                    btn.className = 'w-14 h-8 bg-amber-500 rounded-full relative transition-all duration-300 shadow-inner flex items-center p-1 shrink-0';
+                    thumb.style.transform = 'translateX(24px)';
+                    thumb.innerText = 'ON';
+                    thumb.className = 'w-6 h-6 bg-white rounded-full transition-all shadow-md flex items-center justify-center text-[8px] text-amber-600 font-black';
+                    if (desc) desc.innerText = 'Quiet Hours (9 PM - 8 AM): Hold & Auto-Send at 8 AM';
+                } else {
+                    btn.className = 'w-14 h-8 bg-gray-300 dark:bg-slate-700 rounded-full relative transition-all duration-300 shadow-inner flex items-center p-1 shrink-0';
+                    thumb.style.transform = 'translateX(0px)';
+                    thumb.innerText = 'OFF';
+                    thumb.className = 'w-6 h-6 bg-white rounded-full transition-all shadow-md flex items-center justify-center text-[8px] text-gray-500 font-black';
+                    if (desc) desc.innerText = '⚡ 24/7 Instant Send: No delay, messages send right away!';
+                }
+            }
+        }
+
+        function notifyWhatsAppStatus(result, recipientName = '', phone = '', actionType = 'Message', fullPayload = null) {
+            let nameText = recipientName ? `for ${recipientName}` : (phone ? `to ${phone}` : '');
+            let isSuccess = result && (result.status === 'success' || result.sent === 'true' || result.sent === true || (result.apiResponse && result.apiResponse.sent === 'true'));
+            
+            if (isSuccess) {
+                showToast(`✔ WHATSAPP SENT: ${actionType} delivered ${nameText}!`);
+                return true;
+            } else {
+                let err = (result && (result.message || result.error)) || 'UltraMsg Trial Expired / Offline';
+                console.warn(`WhatsApp Dispatch Failed ${nameText}:`, err);
+                
+                showToast(`🚨 WHATSAPP NOT SENT: ${actionType} failed ${nameText}! (UltraMsg Free Trial Expired/Stopped). Update Settings.`);
+                
+                let badge = document.getElementById('waStatusBadge');
+                if (badge) {
+                    badge.className = 'text-[9px] font-black px-2.5 py-0.5 rounded-full bg-red-100 text-red-600 border border-red-200';
+                    badge.innerText = 'EXPIRED / OFFLINE';
+                }
+
+                if (phone && fullPayload) {
+                    recordFailedMessage({
+                        id: 'FAIL_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                        phone: phone,
+                        message: fullPayload.message || '',
+                        name: recipientName || '',
+                        type: actionType,
+                        failedAt: new Date().toISOString(),
+                        reason: err
+                    });
+                }
+                return false;
+            }
+        }
+
+        function recordFailedMessage(item) {
+            if (!appData.failedMessages) appData.failedMessages = [];
+            let exists = appData.failedMessages.find(f => f.phone === item.phone && f.type === item.type);
+            if (!exists) {
+                appData.failedMessages.push(item);
+                try {
+                    localStorage.setItem('vseh_failed_wa_messages', JSON.stringify(appData.failedMessages));
+                } catch(e) {}
+                updateFailedMessagesUI();
+            }
+        }
+
+        function updateFailedMessagesUI() {
+            let box = document.getElementById('waFailedBox');
+            let countEl = document.getElementById('waFailedCount');
+            let list = appData.failedMessages || [];
+            if (!box) return;
+
+            if (list.length > 0) {
+                box.classList.remove('hidden');
+                if (countEl) countEl.innerText = list.length;
+            } else {
+                box.classList.add('hidden');
+            }
+        }
+
+        async function retryFailedMessages() {
+            let list = appData.failedMessages || [];
+            if (list.length === 0) {
+                showToast("NO FAILED MESSAGES TO RETRY");
+                return;
+            }
+
+            let btn = document.getElementById('btn-retry-failed');
+            let origHtml = btn ? btn.innerHTML : 'Retry All';
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Retrying...';
+                btn.disabled = true;
+            }
+
+            showToast(`RETRYING ${list.length} FAILED MESSAGES...`);
+            let successfulIds = new Set();
+
+            for (const item of list) {
+                if (item.phone && item.message) {
+                    let res = await gasApi('stealthWhatsAppTrigger', { phone: item.phone, message: item.message });
+                    if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
+                        successfulIds.add(item.id);
+                    }
+                    await new Promise(r => setTimeout(r, 2200));
+                }
+            }
+
+            appData.failedMessages = (appData.failedMessages || []).filter(item => !successfulIds.has(item.id));
+            try {
+                localStorage.setItem('vseh_failed_wa_messages', JSON.stringify(appData.failedMessages));
+            } catch(e) {}
+
+            if (btn) {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+
+            updateFailedMessagesUI();
+            if (successfulIds.size > 0) {
+                showToast(`✔ DELIVERED ${successfulIds.size} PREVIOUSLY FAILED MESSAGES!`);
+            } else {
+                showToast("⚠️ RETRY FAILED! Instance may still be expired. Update in Settings.");
             }
         }
 
@@ -1272,12 +1520,13 @@ function syncUIPanels() {
                 msg = `Fee Payment Receipt 🧾✨\n\nDear Parent,\n\nWe have received the monthly fee payment of *₹${amt}* for *${name.toUpperCase()}* for the month of *${mnth.toUpperCase()}* (Mode: *${mode}*).\n\n🎉 *All fee dues are completely cleared!*\n\nThank you for your timely payment and trust in us! We are committed to providing the best learning guidance and care for your child's bright academic future. 🌟\n\nWith Best Regards,\n*VIJAY SIR EDUCATION HUB*`;
             }
 
-            // CHECK QUIET HOURS (Night 9:00 PM to Morning 8:00 AM)
+            // CHECK QUIET HOURS & TIMER SETTING (Night 9:00 PM to Morning 8:00 AM)
             let now = new Date();
             let currentHour = now.getHours();
             let isQuietHours = (currentHour >= 21 || currentHour < 8);
+            let timerActive = appData.waTimerEnabled !== false;
 
-            if (isQuietHours && !forceSendNow) {
+            if (timerActive && isQuietHours && !forceSendNow) {
                 showToast("🌙 NIGHT TIME: Queued for 8:00 AM Auto-Send (No App Opening Needed)!");
                 await queueNightReceipt({
                     id: 'Q_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
@@ -1295,11 +1544,7 @@ function syncUIPanels() {
             
             showToast("DISPATCHING RECEIPT TO WHATSAPP...");
             let res = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
-            if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
-                showToast("✔ RECEIPT SENT TO WHATSAPP!");
-            } else {
-                showToast("RECEIPT DISPATCH LOGGED");
-            }
+            notifyWhatsAppStatus(res, name, phone, 'Fee Receipt', { message: msg });
         }
 
                         async function sendSoftReminder(index, isAuto = false) {
@@ -1351,11 +1596,7 @@ Warm Regards,
 
             if (!isAuto) {
                 renderDefaulters();
-                if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
-                    showToast("✔ REMINDER SENT TO " + s.name.toUpperCase());
-                } else {
-                    showToast("✖ FAILED: " + (res && res.message ? res.message : "COULD NOT SEND"));
-                }
+                notifyWhatsAppStatus(res, s.name, s.phone, 'Fee Reminder', { message: msg });
             }
         }
 
@@ -1385,21 +1626,24 @@ Warm Regards,
                 btn.disabled = false;
             }
 
-            if (result && (result.status === 'success' || result.sent === 'true' || result.sent === true || result.message === 'ok')) {
+            let isSuccess = result && (result.status === 'success' || result.sent === 'true' || result.sent === true || result.message === 'ok');
+
+            if (isSuccess) {
                 if (resP) {
                     resP.classList.remove('text-indigo-600', 'text-red-500');
                     resP.classList.add('text-green-600');
-                    resP.innerText = '✔ WhatsApp Message Sent Successfully! Check WhatsApp.';
+                    resP.innerText = '✔ WhatsApp Gateway Active & Verified! Check WhatsApp.';
                 }
-                showToast("TEST WHATSAPP SENT SUCCESSFULLY!");
+                showToast("✔ TEST SENT (Direct 24/7 Ping). Schedule Timer applies to Fees Receipts!");
             } else {
                 if (resP) {
                     resP.classList.remove('text-indigo-600', 'text-green-600');
                     resP.classList.add('text-red-500');
                     resP.innerText = '✖ Failed: ' + (result ? (result.message || JSON.stringify(result)) : 'Unknown error');
                 }
-                showToast("FAILED TO SEND WHATSAPP");
+                showToast("FAILED TO SEND WHATSAPP: UltraMsg Trial Expired or Invalid");
             }
+            notifyWhatsAppStatus(result, 'Test Gateway', phone, 'Test Ping', { message: testMsg });
         }
 
         function runAiBriefingModels() {
@@ -1732,6 +1976,7 @@ Warm Regards,
                     </div>`);
                 });
             }
+            checkAttNightNotice();
         }
 
         function setAtt(btn, status) {
@@ -2064,11 +2309,7 @@ Warm Regards,
             
             showToast(`SENDING TEST NOTICE TO ${name.toUpperCase()}...`);
             let res = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
-            if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
-                showToast(`✔ NOTICE SENT TO ${name.toUpperCase()}!`);
-            } else {
-                showToast(`TEST NOTICE DISPATCH LOGGED`);
-            }
+            notifyWhatsAppStatus(res, name, phone, 'Test Notice', { message: msg });
         }
 
         async function broadcastAllTestResults() {
@@ -2094,6 +2335,7 @@ Warm Regards,
             showToast(`BROADCASTING TEST RESULTS TO ${rows.length} STUDENTS 🚀`);
             
             let sentCount = 0;
+            let failCount = 0;
             for (let i = 0; i < rows.length; i++) {
                 let row = rows[i];
                 let name = row.getAttribute('data-name');
@@ -2121,18 +2363,25 @@ Warm Regards,
                 }
                 
                 try {
-                    gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
-                    sentCount++;
-                } catch(e) {}
+                    let res = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
+                    let ok = notifyWhatsAppStatus(res, name, phone, 'Test Notice', { message: msg });
+                    if (ok) sentCount++;
+                    else failCount++;
+                } catch(e) {
+                    failCount++;
+                }
+                if (i < rows.length - 1) await new Promise(r => setTimeout(r, 1200));
             }
             
-            setTimeout(() => {
-                if (btn) {
-                    btn.innerHTML = origHtml;
-                    btn.disabled = false;
-                }
+            if (btn) {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+            if (failCount > 0) {
+                showToast(`⚠️ TEST BROADCAST: ${sentCount} SENT, ${failCount} FAILED. Check Gateway!`);
+            } else {
                 showToast(`✔ TEST RESULTS DELIVERED TO ${sentCount} PARENTS!`);
-            }, 1500);
+            }
         }
 
         function initSettingsUI() {
@@ -2142,6 +2391,9 @@ Warm Regards,
                 if (instElem) instElem.value = appData.waSettings.instanceId || 'instance175857';
                 if (tokElem) tokElem.value = appData.waSettings.token || '7yqm7bhojwpovbu4';
             }
+            updateWaTimerUI();
+            updateFailedMessagesUI();
+            checkInstanceHealth();
             initFeeClasses();
         }
 
@@ -2249,7 +2501,7 @@ Warm Regards,
             let btn = document.getElementById('btn-save-wa');
             let origHtml = btn ? btn.innerHTML : 'Save WhatsApp Settings';
             if (btn) {
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> SAVING TO SUPABASE...';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> VERIFYING & SAVING...';
                 btn.disabled = true;
             }
 
@@ -2258,7 +2510,14 @@ Warm Regards,
                 token: tok
             };
 
-            let res = await gasApi('saveAllSettings', { feeSettings: appData.feeSettings, waSettings: appData.waSettings });
+            // Live verify the new credentials with UltraMsg
+            let isHealthOk = await checkInstanceHealth(inst, tok);
+
+            let res = await gasApi('saveAllSettings', { 
+                feeSettings: appData.feeSettings, 
+                waSettings: appData.waSettings,
+                waTimerEnabled: appData.waTimerEnabled !== false
+            });
             if (res && res.status === 'success') {
                 appData = Object.assign(appData, res);
             }
@@ -2268,7 +2527,14 @@ Warm Regards,
                 btn.disabled = false;
             }
 
-            showToast("WHATSAPP CONFIG SAVED TO CLOUD");
+            if (isHealthOk === true) {
+                showToast("✔ WHATSAPP GATEWAY CONNECTED & SAVED TO CLOUD!");
+            } else if (isHealthOk === false) {
+                showToast("⚠️ SAVED, BUT INSTANCE IS EXPIRED / INVALID CREDENTIALS");
+            } else {
+                showToast("WHATSAPP CONFIG SAVED TO CLOUD");
+            }
+
             if (!waLocked) toggleWaLock();
             initSettingsUI();
         }
@@ -2491,7 +2757,7 @@ function toggleModalLock() {
             
             if(!date) { showToast("SELECT DATE"); return; }
             
-            let btn = document.querySelector('button[onclick="submitAttendance()"]');
+            let btn = document.getElementById('attSubmitBtn') || document.querySelector('button[onclick="submitAttendance()"]');
             if(btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> SAVING...'; btn.disabled = true; }
             
             // Read attendance from data-selected attributes on buttons
@@ -2514,7 +2780,12 @@ function toggleModalLock() {
                 });
             });
             
-            if(records.length === 0) { showToast("NO STUDENTS TO MARK"); if(btn) { btn.innerHTML = 'SAVE & SEND ALERTS <i class="fas fa-paper-plane ml-2 text-lg"></i>'; btn.disabled = false; } return; }
+            if(records.length === 0) { 
+                showToast("NO STUDENTS TO MARK"); 
+                if(btn) btn.disabled = false; 
+                checkAttNightNotice(); 
+                return; 
+            }
             
             let result = await gasApi('saveAttendanceBatch', records);
             if(result && result.status === 'success') {
@@ -2522,27 +2793,66 @@ function toggleModalLock() {
                 // Live Supabase Data
             }
             
+            // Check Quiet Hours & Message Schedule Timer (9 PM to 8 AM)
+            let now = new Date();
+            let currentHour = now.getHours();
+            let isQuietHours = (currentHour >= 21 || currentHour < 8);
+            let timerActive = appData.waTimerEnabled !== false;
+            let forceSendElem = document.getElementById('attForceSendNow');
+            let forceSend = forceSendElem && forceSendElem.checked;
+
             // Send absent alerts via WhatsApp
-            records.forEach(r => {
-                if (r.status === 'Absent') {
-                    let s = (appData.students || []).find(x => x.name === r.studentName && (!r.class || x.class === r.class));
-                    if (s && s.phone) {
-                        let formattedDate = date;
-                        let d = new Date(date);
-                        if (!isNaN(d.getTime())) {
-                            formattedDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            let absentRecords = records.filter(r => r.status === 'Absent');
+            if (absentRecords.length > 0) {
+                if (timerActive && isQuietHours && !forceSend) {
+                    showToast(`🌙 NIGHT ATTENDANCE: Queuing ${absentRecords.length} absent alerts for 8:00 AM auto-dispatch...`);
+                    for (const r of absentRecords) {
+                        let s = (appData.students || []).find(x => x.name === r.studentName && (!r.class || x.class === r.class));
+                        if (s && s.phone) {
+                            let formattedDate = date;
+                            let d = new Date(date);
+                            if (!isNaN(d.getTime())) {
+                                formattedDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                            }
+                            let studentClass = r.class || cls || 'Class';
+                            let msg = `Dear Parent,\n\nYour ward *${r.studentName.toUpperCase()}* is *ABSENT* today (${formattedDate}) from *${studentClass}* (${shift} Shift).\n\nPlease ensure regular attendance for their continuous learning and academic progress.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+                            
+                            await queueNightReceipt({
+                                id: 'Q_ATT_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                                studentName: r.studentName,
+                                phone: s.phone,
+                                message: msg,
+                                type: 'Absent Alert',
+                                queuedAt: now.toISOString(),
+                                scheduledFor: '08:00 AM'
+                            });
                         }
-                        let studentClass = r.class || cls || 'Class';
-                        let msg = `Dear Parent,\n\nYour ward *${r.studentName.toUpperCase()}* is *ABSENT* today (${formattedDate}) from *${studentClass}* (${shift} Shift).\n\nPlease ensure regular attendance for their continuous learning and academic progress.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
-                        sendWaMessage(s.phone, msg);
+                    }
+                    showToast(`🌙 ${absentRecords.length} ABSENT ALERTS QUEUED FOR 8:00 AM (Timer ON)`);
+                } else {
+                    // Instant dispatch (Timer OFF, daytime, or forceSend checked)
+                    for (const r of absentRecords) {
+                        let s = (appData.students || []).find(x => x.name === r.studentName && (!r.class || x.class === r.class));
+                        if (s && s.phone) {
+                            let formattedDate = date;
+                            let d = new Date(date);
+                            if (!isNaN(d.getTime())) {
+                                formattedDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                            }
+                            let studentClass = r.class || cls || 'Class';
+                            let msg = `Dear Parent,\n\nYour ward *${r.studentName.toUpperCase()}* is *ABSENT* today (${formattedDate}) from *${studentClass}* (${shift} Shift).\n\nPlease ensure regular attendance for their continuous learning and academic progress.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+                            await sendWaMessage(s.phone, msg, r.studentName);
+                            if (absentRecords.length > 1) await new Promise(res => setTimeout(res, 1200));
+                        }
                     }
                 }
-            });
+            }
             
             syncUIPanels();
             updateClassStatusIndicator();
             
-            if(btn) { btn.innerHTML = 'SAVE & SEND ALERTS <i class="fas fa-paper-plane ml-2 text-lg"></i>'; btn.disabled = false; }
+            if(btn) btn.disabled = false;
+            checkAttNightNotice();
             showToast("ATTENDANCE SAVED");
         }
 
@@ -2756,9 +3066,7 @@ async function saveStudentToServer(e) {
                         
                         showToast(`DISPATCHING DUE REMINDER FOR ${monthsText}...`);
                         gasApi('stealthWhatsAppTrigger', { phone: savedStudent.phone, message: reminderMsg }).then(res => {
-                            if (res && (res.status === 'success' || res.sent === 'true' || res.sent === true)) {
-                                showToast(`✔ REMINDER SENT FOR ${monthsText}!`);
-                            }
+                            notifyWhatsAppStatus(res, savedStudent.name, savedStudent.phone, `Due Reminder (${monthsText})`, { message: reminderMsg });
                         }).catch(()=>{});
                     }
                 }
@@ -3448,9 +3756,11 @@ function initFeeClasses() {
     });
 }
 
-function sendWaMessage(phone, msg) {
-    if(!appData.waSettings || !appData.waSettings.instanceId || !appData.waSettings.token) return;
-    gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
+async function sendWaMessage(phone, msg, name = '') {
+    if (!phone || !msg) return;
+    let res = await gasApi('stealthWhatsAppTrigger', { phone: phone, message: msg });
+    notifyWhatsAppStatus(res, name, phone, 'WhatsApp Alert', { message: msg });
+    return res;
 }
 
 function validatePhone(input) {
