@@ -20,6 +20,63 @@ function getTargetFeeMonth() {
 // ==========================================================================
 const ALL_MONTHS_LIST = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+function getCycleDueDate(year, monthIndex, joinDay) {
+    let nextM = monthIndex + 1;
+    let nextY = year;
+    if (nextM > 11) {
+        nextM = 0;
+        nextY++;
+    }
+    let maxDays = new Date(nextY, nextM + 1, 0).getDate();
+    let safeDay = Math.min(joinDay, maxDays);
+    return new Date(nextY, nextM, safeDay, 0, 0, 0, 0);
+}
+
+// ==========================================================================
+// UNIVERSAL SCHOOL CLASS ORDERING (Nur -> PPI -> PPII -> 1st -> ... -> 12th)
+// ==========================================================================
+function getClassRank(name) {
+    if (!name) return 999;
+    let s = String(name).trim().toUpperCase();
+    
+    // Pre-primary / Kindergarten
+    if (s.includes('PLAY') || s === 'PG') return 1;
+    if (s.includes('PRE-NUR') || s.includes('PRE NUR')) return 2;
+    if (s.includes('NUR')) return 3;
+    if (s.includes('LKG') || s === 'PPI' || s === 'PP1' || s === 'PP-1' || s === 'PP-I' || s.includes('JR')) return 4;
+    if (s.includes('UKG') || s === 'PPII' || s === 'PP2' || s === 'PP-2' || s === 'PP-II' || s.includes('SR')) return 5;
+    if (s === 'KG' || s.includes('KINDER')) return 6;
+    if (s.includes('PREP')) return 7;
+
+    // Numbered classes (1st, 2nd, ... 12th) - check digits first
+    let numMatch = s.match(/\d+/);
+    if (numMatch) {
+        let n = parseInt(numMatch[0]);
+        return 10 + n;
+    }
+
+    // Roman Numerals
+    const romanMap = {
+        'XII': 22, 'XI': 21, 'X': 20, 'IX': 19, 'VIII': 18,
+        'VII': 17, 'VI': 16, 'V': 15, 'IV': 14, 'III': 13,
+        'II': 12, 'I': 11
+    };
+    for (let r in romanMap) {
+        let regex = new RegExp('(?:^|\\s)' + r + '(?:$|\\s|TH|ST|ND|RD)');
+        if (regex.test(s)) return romanMap[r];
+    }
+
+    if (s.includes('PASSOUT') || s.includes('DROPPER')) return 50;
+    return 100;
+}
+
+function compareClasses(a, b) {
+    let rankA = getClassRank(a);
+    let rankB = getClassRank(b);
+    if (rankA !== rankB) return rankA - rankB;
+    return a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'});
+}
+
 function calculateStudentDues(student, payments) {
     if (!student) {
         return { pendingMonths: [], pendingCount: 0, totalPendingAmount: 0, isOverdue: false, formattedPendingText: '', nextDueDate: '' };
@@ -46,7 +103,7 @@ function calculateStudentDues(student, payments) {
     let paidMonthsSet = new Set();
     studentPayments.forEach(p => {
         let pMonth = (p.month || '').trim();
-        let splitMonths = pMonth.split(/[,&+]|and/i);
+        let splitMonths = pMonth.split(/[,&+]| and /i);
         splitMonths.forEach(m => {
             let clean = m.trim().toLowerCase();
             if (clean) paidMonthsSet.add(clean);
@@ -72,15 +129,17 @@ function calculateStudentDues(student, payments) {
     let curYear = joinDate.getFullYear();
     let curMonth = joinDate.getMonth();
 
-    let targetYear = now.getFullYear();
-    let targetMonth = now.getMonth();
-    let todayDay = now.getDate();
+    let nowYear = now.getFullYear();
+    let nowMonth = now.getMonth();
 
-    while (curYear < targetYear || (curYear === targetYear && curMonth <= targetMonth)) {
+    let nextDueDateStr = "";
+    let foundNextDue = false;
+
+    while (curYear < nowYear || (curYear === nowYear && curMonth <= nowMonth)) {
         let mName = ALL_MONTHS_LIST[curMonth];
-        let cycleDueDate = new Date(curYear, curMonth, joinDay);
+        let cycleDueDate = getCycleDueDate(curYear, curMonth, joinDay);
         
-        // Cycle is due if current date has reached or passed cycleDueDate
+        // Cycle is due ONLY IF current date has reached or passed cycleDueDate (end of billing month)
         let isCycleDue = (now >= cycleDueDate);
 
         if (isCycleDue) {
@@ -88,6 +147,12 @@ function calculateStudentDues(student, payments) {
             if (!paidMonthsSet.has(mName.toLowerCase())) {
                 pendingMonths.push(mName);
             }
+        } else if (!foundNextDue) {
+            let dueDay = cycleDueDate.getDate();
+            let dueMonthName = ALL_MONTHS_LIST[cycleDueDate.getMonth()];
+            let dueYear = cycleDueDate.getFullYear();
+            nextDueDateStr = `${dueDay} ${dueMonthName} ${dueYear}`;
+            foundNextDue = true;
         }
 
         curMonth++;
@@ -97,17 +162,13 @@ function calculateStudentDues(student, payments) {
         }
     }
 
-    // Compute next due date string
-    let nextDueYear = targetYear;
-    let nextDueMonth = targetMonth;
-    if (todayDay >= joinDay) {
-        nextDueMonth++;
-        if (nextDueMonth > 11) {
-            nextDueMonth = 0;
-            nextDueYear++;
-        }
+    if (!nextDueDateStr) {
+        let nextCycleDue = getCycleDueDate(curYear, curMonth, joinDay);
+        let dueDay = nextCycleDue.getDate();
+        let dueMonthName = ALL_MONTHS_LIST[nextCycleDue.getMonth()];
+        let dueYear = nextCycleDue.getFullYear();
+        nextDueDateStr = `${dueDay} ${dueMonthName} ${dueYear}`;
     }
-    let nextDueDateStr = `${joinDay} ${ALL_MONTHS_LIST[nextDueMonth]} ${nextDueYear}`;
 
     // Format human-readable pending months string
     let formattedPendingText = "";
@@ -1634,7 +1695,7 @@ Warm Regards,
                     resP.classList.add('text-green-600');
                     resP.innerText = '✔ WhatsApp Gateway Active & Verified! Check WhatsApp.';
                 }
-                showToast("✔ TEST SENT (Direct 24/7 Ping). Schedule Timer applies to Fees Receipts!");
+                showToast("✔ TEST MESSAGE SENT SUCCESSFULLY!");
             } else {
                 if (resP) {
                     resP.classList.remove('text-indigo-600', 'text-green-600');
@@ -1916,7 +1977,7 @@ Warm Regards,
                     classMap[c].push(s);
                 });
                 
-                let sortedClasses = Object.keys(classMap).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+                let sortedClasses = Object.keys(classMap).sort(compareClasses);
                 
                 sortedClasses.forEach(cName => {
                     let stuList = classMap[cName];
@@ -2030,7 +2091,7 @@ Warm Regards,
                 ['9th', '10th', '11th', '12th'].forEach(c => classSet.add(c));
             }
             
-            let classes = Array.from(classSet).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+            let classes = Array.from(classSet).sort(compareClasses);
             
             let html = '';
             classes.forEach(cls => {
@@ -2083,17 +2144,25 @@ Warm Regards,
             
             let box = document.getElementById('dynamicClassesBox');
             box.innerHTML = '';
+            let shiftClasses = [];
             for (let cls in appData.feeSettings) {
                 if (cls.startsWith(shift + " - ")) {
-                    let cleanName = cls.replace(shift + " - ", "");
-                    box.insertAdjacentHTML('beforeend', `
-                    <div class="flex items-center space-x-2 mb-2 cls-row">
-                        <input type="text" class="mobile-input cls-name w-1/2 text-xs" value="${cleanName}" ${clsLocked ? 'disabled' : ''}>
-                        <input type="number" class="mobile-input cls-fee w-1/2 text-xs" value="${appData.feeSettings[cls]}" ${clsLocked ? 'disabled' : ''}>
-                        <button type="button" onclick="this.parentElement.remove()" class="del-cls-btn w-10 shrink-0 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100 h-10 active:scale-95 transition" ${clsLocked ? 'disabled style="opacity:0.3"' : ''}><i class="fas fa-trash"></i></button>
-                    </div>`);
+                    shiftClasses.push({
+                        fullKey: cls,
+                        cleanName: cls.replace(shift + " - ", ""),
+                        fee: appData.feeSettings[cls]
+                    });
                 }
             }
+            shiftClasses.sort((a, b) => compareClasses(a.cleanName, b.cleanName));
+            shiftClasses.forEach(item => {
+                box.insertAdjacentHTML('beforeend', `
+                <div class="flex items-center space-x-2 mb-2 cls-row">
+                    <input type="text" class="mobile-input cls-name w-1/2 text-xs" value="${item.cleanName}" ${clsLocked ? 'disabled' : ''}>
+                    <input type="number" class="mobile-input cls-fee w-1/2 text-xs" value="${item.fee}" ${clsLocked ? 'disabled' : ''}>
+                    <button type="button" onclick="this.parentElement.remove()" class="del-cls-btn w-10 shrink-0 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100 h-10 active:scale-95 transition" ${clsLocked ? 'disabled style="opacity:0.3"' : ''}><i class="fas fa-trash"></i></button>
+                </div>`);
+            });
         }
 
         function closeShiftSettings() {
@@ -2148,7 +2217,7 @@ Warm Regards,
                 }
             }
             
-            let sorted = Array.from(classes).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+            let sorted = Array.from(classes).sort(compareClasses);
             if (sorted.length === 0) {
                 classDropdown.insertAdjacentHTML('beforeend', '<option value="">No Classes Found</option>');
             } else {
@@ -2602,16 +2671,118 @@ function applyModalLockState(isLocked) {
     }
 }
 
+var stuSendReminderEnabled = true;
+
+function toggleStuReminder(e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    stuSendReminderEnabled = !stuSendReminderEnabled;
+    updateStuReminderUI();
+    if (stuSendReminderEnabled) {
+        showToast("🔔 INSTANT REMINDER: ENABLED (Will send on save)");
+    } else {
+        showToast("🔕 INSTANT REMINDER: DISABLED (No message will be sent)");
+    }
+}
+
+function updateStuReminderUI() {
+    let btn = document.getElementById('stuReminderToggleBtn');
+    let thumb = document.getElementById('stuReminderToggleThumb');
+    let hiddenInput = document.getElementById('stuSendReminderToggle');
+    let desc = document.getElementById('stuReminderDesc');
+    let badge = document.getElementById('stuReminderBadge');
+    let iconBox = document.getElementById('stuReminderIconBox');
+    
+    if (hiddenInput) hiddenInput.value = String(stuSendReminderEnabled);
+    
+    if (btn && thumb) {
+        if (stuSendReminderEnabled) {
+            btn.className = 'w-14 h-8 bg-green-500 rounded-full relative transition-all duration-300 shadow-inner flex items-center p-1 shrink-0 cursor-pointer pointer-events-none';
+            thumb.style.transform = 'translateX(24px)';
+            thumb.innerText = 'ON';
+            thumb.className = 'w-6 h-6 bg-white rounded-full transition-all duration-300 shadow-md flex items-center justify-center text-[8px] text-green-600 font-black';
+            if (desc) desc.innerText = 'Auto-send WhatsApp fee reminder to parent upon saving';
+            if (badge) {
+                badge.innerText = 'ACTIVE';
+                badge.className = 'ml-2 text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 uppercase';
+            }
+            if (iconBox) {
+                iconBox.className = 'w-8 h-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center shrink-0 transition-colors';
+            }
+        } else {
+            btn.className = 'w-14 h-8 bg-gray-300 dark:bg-slate-700 rounded-full relative transition-all duration-300 shadow-inner flex items-center p-1 shrink-0 cursor-pointer pointer-events-none';
+            thumb.style.transform = 'translateX(0px)';
+            thumb.innerText = 'OFF';
+            thumb.className = 'w-6 h-6 bg-white rounded-full transition-all duration-300 shadow-md flex items-center justify-center text-[8px] text-gray-500 font-black';
+            if (desc) desc.innerText = 'Silent save — no WhatsApp reminder will be sent to parent';
+            if (badge) {
+                badge.innerText = 'DISABLED';
+                badge.className = 'ml-2 text-[8px] font-black px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase';
+            }
+            if (iconBox) {
+                iconBox.className = 'w-8 h-8 rounded-lg bg-gray-100 text-gray-400 flex items-center justify-center shrink-0 transition-colors';
+            }
+        }
+    }
+}
+
+function openAddStudentModal() {
+    let f = document.getElementById('addForm');
+    if (f) f.reset();
+    let rIndex = document.getElementById('stuRowIndex');
+    if (rIndex) rIndex.value = '-1';
+    let sId = document.getElementById('stuId');
+    if (sId) sId.value = '';
+    
+    let t = document.getElementById('modalTitle');
+    if (t) t.innerText = 'Registration';
+    
+    let lockBtn = document.getElementById('modalLockBtn');
+    if (lockBtn) lockBtn.classList.add('hidden');
+    
+    applyModalLockState(false);
+    
+    stuSendReminderEnabled = true;
+    updateStuReminderUI();
+    
+    let remBox = document.getElementById('stuReminderToggleBox');
+    if (remBox) remBox.classList.remove('hidden');
+    
+    let pCont = document.getElementById('pastMonthsContainer');
+    if (pCont) pCont.classList.add('hidden');
+    let cbCont = document.getElementById('pastMonthsCheckboxes');
+    if (cbCont) cbCont.innerHTML = '';
+    
+    let delBox = document.getElementById('deleteBox');
+    if (delBox) delBox.classList.add('hidden');
+    
+    // Set default join date to today
+    let dateInp = document.getElementById('stuDate');
+    if (dateInp) {
+        let now = new Date();
+        let y = now.getFullYear();
+        let m = String(now.getMonth() + 1).padStart(2, '0');
+        let d = String(now.getDate()).padStart(2, '0');
+        dateInp.value = `${y}-${m}-${d}`;
+    }
+    
+    openModal('addModal');
+}
+
 function openModal(id) {
     if(!id || typeof id !== 'string') id = 'addModal';
     if(id === 'addModal') {
-        let t = document.getElementById('modalTitle');
         let rIndex = document.getElementById('stuRowIndex');
-        if(!rIndex || rIndex.value === '-1' || rIndex.value === '') {
+        let isEdit = rIndex && rIndex.value !== '-1' && rIndex.value !== '';
+        if(!isEdit) {
+            let t = document.getElementById('modalTitle');
             if(t) t.innerText = 'Registration';
             let lockBtn = document.getElementById('modalLockBtn');
             if(lockBtn) lockBtn.classList.add('hidden');
             applyModalLockState(false);
+            let remBox = document.getElementById('stuReminderToggleBox');
+            if(remBox) remBox.classList.remove('hidden');
+            stuSendReminderEnabled = true;
+            updateStuReminderUI();
         }
     }
     document.getElementById(id).classList.remove('hidden');
@@ -2641,6 +2812,12 @@ function closeModal(id) {
             let lockBtn = document.getElementById('modalLockBtn');
             if(lockBtn) lockBtn.classList.add('hidden');
             applyModalLockState(false);
+            
+            stuSendReminderEnabled = true;
+            updateStuReminderUI();
+            
+            let remBox = document.getElementById('stuReminderToggleBox');
+            if(remBox) remBox.classList.remove('hidden');
             let eIndex = document.getElementById('stuRowIndex');
             if(eIndex) eIndex.value = '-1';
             let sId = document.getElementById('stuId');
@@ -2684,6 +2861,9 @@ function editStudent(index) {
         }
     }
     
+    let remBox = document.getElementById('stuReminderToggleBox');
+    if (remBox) remBox.classList.add('hidden');
+
     let delBox = document.getElementById('deleteBox');
     if (delBox) delBox.classList.remove('hidden');
     
@@ -2946,7 +3126,7 @@ function toggleModalLock() {
                 }
             });
 
-            let sortedClasses = Array.from(added).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+            let sortedClasses = Array.from(added).sort(compareClasses);
             sortedClasses.forEach(c => {
                 clsDropdown.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
             });
@@ -3028,46 +3208,52 @@ async function saveStudentToServer(e) {
         // INSTANT ON-SAVE OVERDUE REMINDER (EXACTLY ONCE, IMMUNE TO RELOAD)
         // ==========================================================================
         try {
-            let savedStudent = (appData.students || []).find(s => s.id === data.id || (s.name === data.name && s.class === data.class && (s.shift || 'Morning') === data.shift)) || data;
-            if (savedStudent && savedStudent.phone) {
-                let dues = calculateStudentDues(savedStudent, appData.payments);
-                if (dues && dues.isOverdue && dues.pendingMonths && dues.pendingMonths.length > 0) {
-                    let now = new Date();
-                    let cycleYear = now.getFullYear();
-                    let logKey = (savedStudent.id || savedStudent.name).trim().toUpperCase() + '_' + dues.pendingMonths[0].toUpperCase() + '_' + cycleYear;
-                    
-                    let localLog = {};
-                    try {
-                        let stored = localStorage.getItem('vseh_auto_reminders_log');
-                        if (stored) localLog = JSON.parse(stored);
-                    } catch(e) {}
-                    let dbLog = appData.autoRemindersLog || {};
-                    let combinedLog = Object.assign({}, dbLog, localLog);
-                    
-                    if (!combinedLog[logKey]) {
-                        // Mark immediately in combinedLog to prevent duplicate on reload!
-                        let nowIso = now.toISOString();
-                        combinedLog[logKey] = nowIso;
+            let shouldSendReminder = (typeof stuSendReminderEnabled !== 'undefined') 
+                ? (stuSendReminderEnabled === true) 
+                : (document.getElementById('stuSendReminderToggle') ? document.getElementById('stuSendReminderToggle').value === 'true' : true);
+
+            if (!isEdit && shouldSendReminder) {
+                let savedStudent = (appData.students || []).find(s => s.id === data.id || (s.name === data.name && s.class === data.class && (s.shift || 'Morning') === data.shift)) || data;
+                if (savedStudent && savedStudent.phone) {
+                    let dues = calculateStudentDues(savedStudent, appData.payments);
+                    if (dues && dues.isOverdue && dues.pendingMonths && dues.pendingMonths.length > 0) {
+                        let now = new Date();
+                        let cycleYear = now.getFullYear();
+                        let logKey = (savedStudent.id || savedStudent.name).trim().toUpperCase() + '_' + dues.pendingMonths[0].toUpperCase() + '_' + cycleYear;
+                        
+                        let localLog = {};
                         try {
-                            localStorage.setItem('vseh_auto_reminders_log', JSON.stringify(combinedLog));
+                            let stored = localStorage.getItem('vseh_auto_reminders_log');
+                            if (stored) localLog = JSON.parse(stored);
                         } catch(e) {}
-                        if (!appData.autoRemindersLog) appData.autoRemindersLog = {};
-                        appData.autoRemindersLog[logKey] = nowIso;
+                        let dbLog = appData.autoRemindersLog || {};
+                        let combinedLog = Object.assign({}, dbLog, localLog);
                         
-                        // Persist to Supabase settings in background
-                        supabaseFetch('settings', '', 'POST', [{
-                            key: 'autoRemindersLog',
-                            value: JSON.stringify(combinedLog)
-                        }], { 'Prefer': 'resolution=merge-duplicates' }).catch(()=>{});
-                        
-                        let feeAmt = dues.totalPendingAmount;
-                        let monthsText = dues.formattedPendingText;
-                        let reminderMsg = `Greetings! 🌟\n\nHope *${savedStudent.name.toUpperCase()}* is doing well.\n\nStudent registration has been completed successfully.\nKindly note that monthly fee of *₹${feeAmt}* for *${monthsText}* is currently pending.\nKindly process it when convenient.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
-                        
-                        showToast(`DISPATCHING DUE REMINDER FOR ${monthsText}...`);
-                        gasApi('stealthWhatsAppTrigger', { phone: savedStudent.phone, message: reminderMsg }).then(res => {
-                            notifyWhatsAppStatus(res, savedStudent.name, savedStudent.phone, `Due Reminder (${monthsText})`, { message: reminderMsg });
-                        }).catch(()=>{});
+                        if (!combinedLog[logKey]) {
+                            // Mark immediately in combinedLog to prevent duplicate on reload!
+                            let nowIso = now.toISOString();
+                            combinedLog[logKey] = nowIso;
+                            try {
+                                localStorage.setItem('vseh_auto_reminders_log', JSON.stringify(combinedLog));
+                            } catch(e) {}
+                            if (!appData.autoRemindersLog) appData.autoRemindersLog = {};
+                            appData.autoRemindersLog[logKey] = nowIso;
+                            
+                            // Persist to Supabase settings in background
+                            supabaseFetch('settings', '', 'POST', [{
+                                key: 'autoRemindersLog',
+                                value: JSON.stringify(combinedLog)
+                            }], { 'Prefer': 'resolution=merge-duplicates' }).catch(()=>{});
+                            
+                            let feeAmt = dues.totalPendingAmount;
+                            let monthsText = dues.formattedPendingText;
+                            let reminderMsg = `Greetings! 🌟\n\nHope *${savedStudent.name.toUpperCase()}* is doing well.\n\nStudent registration has been completed successfully.\nKindly note that monthly fee of *₹${feeAmt}* for *${monthsText}* is currently pending.\nKindly process it when convenient.\n\nWarm Regards,\n*VIJAY SIR EDUCATION HUB*`;
+                            
+                            showToast(`DISPATCHING DUE REMINDER FOR ${monthsText}...`);
+                            gasApi('stealthWhatsAppTrigger', { phone: savedStudent.phone, message: reminderMsg }).then(res => {
+                                notifyWhatsAppStatus(res, savedStudent.name, savedStudent.phone, `Due Reminder (${monthsText})`, { message: reminderMsg });
+                            }).catch(()=>{});
+                        }
                     }
                 }
             }
@@ -3093,40 +3279,48 @@ function checkPastDate() {
     
     let joinDate = new Date(dateVal);
     let now = new Date();
-    let diffDays = Math.ceil((now - joinDate) / (1000 * 60 * 60 * 24));
+    if (isNaN(joinDate.getTime())) { container.classList.add('hidden'); return; }
     
-    if (diffDays >= 30) {
+    let joinDay = joinDate.getDate();
+    let startMonth = joinDate.getMonth();
+    let startYear = joinDate.getFullYear();
+    
+    let currentMonth = now.getMonth();
+    let currentYear = now.getFullYear();
+    
+    let m = startMonth;
+    let y = startYear;
+    let completedMonths = [];
+
+    while (y < currentYear || (y === currentYear && m <= currentMonth)) {
+        let cycleDueDate = getCycleDueDate(y, m, joinDay);
+        // Only include months whose full cycle has ended and are due
+        if (now >= cycleDueDate) {
+            completedMonths.push(ALL_MONTHS_LIST[m]);
+        }
+        m++;
+        if (m > 11) { m = 0; y++; }
+    }
+    
+    if (completedMonths.length > 0) {
         container.classList.remove('hidden');
-        let months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        
-        let startMonth = joinDate.getMonth();
-        let startYear = joinDate.getFullYear();
-        
-        let currentMonth = now.getMonth();
-        let currentYear = now.getFullYear();
-        
         let html = `
             <label class="flex items-center space-x-1 cursor-pointer mr-3">
                 <input type="checkbox" id="past_paid_no" value="NO" class="rounded text-red-600 focus:ring-red-500" onchange="togglePastPaidNo()">
                 <span class="text-[9px] font-black text-red-600 uppercase">NO</span>
             </label>
         `;
-        let m = startMonth;
-        let y = startYear;
-        
-        while (y < currentYear || (y === currentYear && m <= currentMonth)) {
-            let mName = months[m];
+        completedMonths.forEach(mName => {
             html += `
             <label class="flex items-center space-x-1 cursor-pointer">
                 <input type="checkbox" name="past_paid_month" value="${mName}" class="past_paid_month_chk rounded text-purple-600 focus:ring-purple-500" onchange="togglePastPaidMonth()">
                 <span class="text-[9px] font-black text-gray-700 uppercase">${mName}</span>
             </label>`;
-            m++;
-            if (m > 11) { m = 0; y++; }
-        }
+        });
         cbContainer.innerHTML = html;
     } else {
         container.classList.add('hidden');
+        cbContainer.innerHTML = '';
     }
 }
 
@@ -3367,8 +3561,9 @@ function calculateRemaining() {
     
     let amt = parseInt(amtStr) || 0;
     let shiftElem = document.getElementById('feeShift'); let shift = shiftElem ? shiftElem.value : 'Morning';
-    let cls = document.getElementById('feeClass').value;
-    let actualFee = appData.feeSettings ? parseInt(appData.feeSettings[shift + " - " + cls]) || 0 : 0;
+    let studentName = (document.getElementById('feeStudentSearch') ? document.getElementById('feeStudentSearch').value : '').trim().toUpperCase();
+    let student = (appData.students || []).find(s => (s.name || '').trim().toUpperCase() === studentName);
+    let actualFee = (student && student.fee) ? parseInt(student.fee) : (appData.feeSettings ? parseInt(appData.feeSettings[shift + " - " + cls]) || 0 : 0);
     
     if(actualFee > 0 && amt < actualFee) {
         remBox.classList.remove('hidden');
@@ -3546,7 +3741,7 @@ function renderStudents() {
             classMap[cName].push(s);
         });
         
-        let sortedClasses = Object.keys(classMap).sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}));
+        let sortedClasses = Object.keys(classMap).sort(compareClasses);
         
         sortedClasses.forEach(cName => {
             let classStudents = classMap[cName];
@@ -3739,20 +3934,19 @@ function initFeeClasses() {
             let parts = k.split(' - ');
             if(parts.length === 2) {
                 let cls = parts[1];
-                if(!added.has(cls)) {
-                    added.add(cls);
-                    feeClass.insertAdjacentHTML('beforeend', '<option value="' + cls + '">' + cls + '</option>');
-                }
+                if(cls) added.add(cls);
             }
         });
     }
     
     // Also add classes from students that might not be in feeSettings
     (appData.students || []).forEach(s => {
-        if(s.class && !added.has(s.class)) {
-            added.add(s.class);
-            feeClass.insertAdjacentHTML('beforeend', '<option value="' + s.class + '">' + s.class + '</option>');
-        }
+        if(s.class) added.add(s.class);
+    });
+
+    let sorted = Array.from(added).sort(compareClasses);
+    sorted.forEach(cls => {
+        feeClass.insertAdjacentHTML('beforeend', '<option value="' + cls + '">' + cls + '</option>');
     });
 }
 
