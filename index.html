@@ -820,6 +820,11 @@
                     </div>
                 </div>
 
+                <button type="button" id="modalAttReportBtn" onclick="openStudentAttendanceReportFromEditModal()" class="hidden w-full bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 py-3 rounded-xl font-black text-xs active:scale-95 transition flex items-center justify-center space-x-2 mt-2 shadow-sm">
+                    <i class="fas fa-file-pdf"></i>
+                    <span>Monthly Attendance Report & PDF</span>
+                </button>
+
                 <!-- INSTANT DUE REMINDER TOGGLE (ON BY DEFAULT, FULLY INTERACTIVE) -->
                 <div id="stuReminderToggleBox" onclick="toggleStuReminder(event)" class="flex items-center justify-between p-3.5 bg-gray-50 dark:bg-slate-800/60 rounded-xl border border-gray-200 dark:border-slate-700 mt-2 cursor-pointer active:scale-[0.99] transition select-none">
                     <div class="flex items-center space-x-2.5 pr-2">
@@ -831,7 +836,7 @@
                                 Instant Due Reminder
                                 <span id="stuReminderBadge" class="ml-2 text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 uppercase">ACTIVE</span>
                             </p>
-                            <p class="text-[9px] font-bold text-gray-400 mt-0.5" id="stuReminderDesc">Auto-send WhatsApp fee reminder to parent upon saving</p>
+                            <p class="text-[9px] font-bold text-gray-400 mt-0.5" id="stuReminderDesc">Auto-send WhatsApp receipt/reminder to parent upon saving</p>
                         </div>
                     </div>
                     <div class="shrink-0">
@@ -847,7 +852,84 @@
         </div>
     </div>
 
+    <!-- STUDENT ATTENDANCE REPORT & PDF MODAL -->
+    <div id="studentAttendanceModal" class="fixed inset-0 bg-gray-900 bg-opacity-60 z-50 hidden flex flex-col justify-end transition-opacity duration-300">
+        <div class="absolute inset-0" onclick="closeStudentAttendanceModal()"></div>
+        <div class="bg-white dark:bg-slate-900 w-full max-w-500 mx-auto rounded-t-32 px-5 pt-3 pb-8 transform transition-transform translate-y-full max-h-[92vh] overflow-y-auto relative premium-shadow" id="studentAttendanceModalContent">
+            <div class="drag-handle"></div>
+            
+            <div class="flex justify-between items-center mb-3">
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-black shadow-sm">
+                        <i class="fas fa-chart-pie"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-black text-gray-800 dark:text-gray-100 uppercase" id="attModalStudentName">Student Attendance</h3>
+                        <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5" id="attModalStudentMeta">Class • Shift • Phone</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeStudentAttendanceModal()" class="w-8 h-8 bg-gray-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-gray-500 active:scale-90"><i class="fas fa-times"></i></button>
+            </div>
+
+            <!-- Stats 4-Grid Cards -->
+            <div class="grid grid-cols-4 gap-2 mb-4">
+                <div class="bg-gray-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-gray-100 dark:border-slate-700 text-center">
+                    <p class="text-[8px] font-black text-gray-400 uppercase tracking-wider">Total</p>
+                    <p class="text-sm font-black text-gray-800 dark:text-gray-100 mt-0.5" id="attModalTotal">0</p>
+                </div>
+                <div class="bg-emerald-50 dark:bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-800 text-center">
+                    <p class="text-[8px] font-black text-emerald-600 uppercase tracking-wider">Present</p>
+                    <p class="text-sm font-black text-emerald-700 dark:text-emerald-400 mt-0.5" id="attModalPresent">0</p>
+                </div>
+                <div class="bg-rose-50 dark:bg-rose-950/30 p-2.5 rounded-xl border border-rose-100 dark:border-rose-800 text-center">
+                    <p class="text-[8px] font-black text-rose-600 uppercase tracking-wider">Absent</p>
+                    <p class="text-sm font-black text-rose-700 dark:text-rose-400 mt-0.5" id="attModalAbsent">0</p>
+                </div>
+                <div class="bg-indigo-50 dark:bg-indigo-950/30 p-2.5 rounded-xl border border-indigo-100 dark:border-indigo-800 text-center">
+                    <p class="text-[8px] font-black text-indigo-600 uppercase tracking-wider">Rate</p>
+                    <p class="text-sm font-black text-indigo-700 dark:text-indigo-400 mt-0.5" id="attModalRate">0%</p>
+                </div>
+            </div>
+
+            <!-- Action Buttons: PDF & WhatsApp with Safety Lock -->
+            <div class="space-y-2.5 mb-4">
+                <!-- 1. Download PDF Button (Full Width, Bold Indigo) -->
+                <button type="button" id="attModalPdfBtn" class="w-full flex items-center justify-center space-x-2 py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-md transition">
+                    <i class="fas fa-file-pdf text-sm"></i>
+                    <span>Download Monthly Attendance PDF</span>
+                </button>
+
+                <!-- 2. WhatsApp Dispatch with Dedicated Safety Lock -->
+                <div class="p-2 bg-gray-50 dark:bg-slate-800/90 rounded-2xl border border-gray-200 dark:border-slate-700">
+                    <div class="flex items-center space-x-2">
+                        <!-- Lock / Unlock Toggle Button -->
+                        <button type="button" id="attWaLockBtn" onclick="toggleAttWaLock()" class="w-12 h-11 rounded-xl bg-red-50 text-red-500 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800 flex items-center justify-center text-sm shadow-sm active:scale-90 transition shrink-0" title="Tap to Unlock WhatsApp Sending">
+                            <i id="attWaLockIcon" class="fas fa-lock"></i>
+                        </button>
+                        <!-- Main WhatsApp Send Button -->
+                        <button type="button" id="attModalWaBtn" onclick="triggerStudentAttendanceWhatsApp()" class="flex-1 flex items-center justify-center space-x-2 py-3 px-3 rounded-xl bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-gray-500 font-black text-xs uppercase tracking-wider cursor-not-allowed opacity-60 transition active:scale-[0.98]">
+                            <i class="fab fa-whatsapp text-sm"></i>
+                            <span id="attModalWaBtnText">WhatsApp Locked (Tap 🔒)</span>
+                        </button>
+                    </div>
+                    <p class="text-[9px] font-bold text-gray-400 text-center mt-1.5 uppercase tracking-tight">🔒 Safety Lock prevents accidental WhatsApp messages</p>
+                </div>
+            </div>
+
+            <!-- Date-wise History Table / List -->
+            <div class="mt-2">
+                <div class="flex justify-between items-center mb-2 px-1">
+                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-wider">Date-wise Attendance Log</p>
+                    <span class="text-[8px] font-bold text-gray-400" id="attModalLogCount">0 sessions</span>
+                </div>
+                <div class="space-y-1.5 max-h-[36vh] overflow-y-auto pr-1" id="attModalHistoryList">
+                    <!-- History items injected dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="./names.js"></script>
-    <script src="./script.js?v=4.4"></script>
+    <script src="./script.js?v=4.6"></script>
 </body>
 </html>

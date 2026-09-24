@@ -306,6 +306,7 @@ async function gasApi(action, payload = null) {
 
             // Attendance Grouping
             let attendance = [];
+            let attendanceRaw = [];
             if (Array.isArray(rawAttendance)) {
                 let groupedAtt = {};
                 rawAttendance.forEach(record => {
@@ -315,6 +316,13 @@ async function gasApi(action, payload = null) {
                         groupedAtt[key] = { date: cleanDate, class: record.class, records: {} };
                     }
                     groupedAtt[key].records[record.student_name] = record.status;
+                    attendanceRaw.push({
+                        studentName: record.student_name,
+                        class: record.class,
+                        date: cleanDate,
+                        month: record.month,
+                        status: record.status
+                    });
                 });
                 attendance = Object.values(groupedAtt);
             }
@@ -373,6 +381,7 @@ async function gasApi(action, payload = null) {
                 students,
                 payments,
                 attendance,
+                attendanceRaw,
                 feeSettings,
                 waSettings,
                 waTimerEnabled: waTimerEnabled !== false,
@@ -634,7 +643,7 @@ async function gasApi(action, payload = null) {
             const contextData = payload.context || {};
             
             // Check if user has configured custom Gemini API key
-            let customKey = (appData.waSettings && appData.waSettings.geminiKey) || localStorage.getItem('vseh_gemini_key');
+            let customKey = (appData.waSettings && appData.waSettings.geminiKey) || localStorage.getItem('vseh_gemini_key') || 'AQ.Ab8RN6JgvNOXzWiwAatEZ-gmcX2s6aQp84lmyUHfuGcV_Xg95Q';
             if (customKey && customKey.trim()) {
                 try {
                     let roster = "No data yet.";
@@ -643,7 +652,7 @@ async function gasApi(action, payload = null) {
                     }
                     const systemPrompt = `You are "Vijay Sir AI Assistant" for VSEH PRO.\nCurrent Date: ${new Date().toLocaleDateString('en-GB')}\nTotal Students: ${contextData.students ? contextData.students.length : 0}\nThis Month Paid Students: ${contextData.paidCount || 0}\n\nROSTER DATA:\n${roster}\n\nAnswer in simple Hindi + English mix. Keep responses concise and direct. Format beautifully with bolding.\nIf the user asks you to mark attendance (present or absent) for all students of a specific class, add this command block at the end: <CMD>MARK_ATTENDANCE|Class|Status</CMD>`;
                     const finalPrompt = systemPrompt + "\n\nUser Command: " + userPrompt;
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(customKey.trim())}`;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(customKey.trim())}`;
                     const resp = await fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -651,8 +660,11 @@ async function gasApi(action, payload = null) {
                     });
                     const resJson = await resp.json();
                     if (!resJson.error && resJson.candidates && resJson.candidates[0] && resJson.candidates[0].content) {
-                        const aiReply = resJson.candidates[0].content.parts[0].text.trim();
-                        return { status: 'success', result: { intent: "TEXT_RESPONSE", message: aiReply } };
+                        const parts = resJson.candidates[0].content.parts || [];
+                        const aiReply = parts.map(p => p.text || '').join('').trim();
+                        if (aiReply) {
+                            return { status: 'success', result: { intent: "TEXT_RESPONSE", message: aiReply } };
+                        }
                     }
                 } catch(e) {
                     console.warn("External Gemini API call failed, falling back to Native NLP engine:", e);
@@ -2658,6 +2670,19 @@ function applyModalLockState(isLocked) {
             saveBtn.classList.remove('opacity-40', 'cursor-not-allowed');
         }
     }
+    let attBtn = document.getElementById('modalAttReportBtn');
+    if (attBtn) {
+        attBtn.disabled = isLocked;
+        if (isLocked) {
+            attBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            attBtn.classList.remove('hover:bg-indigo-100', 'active:scale-95');
+            attBtn.innerHTML = '<i class="fas fa-lock mr-2 text-indigo-400"></i><span>Monthly Attendance & PDF (Locked 🔒 - Tap Lock to Unlock)</span>';
+        } else {
+            attBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            attBtn.classList.add('hover:bg-indigo-100', 'active:scale-95');
+            attBtn.innerHTML = '<i class="fas fa-file-pdf mr-2 text-indigo-600"></i><span>Monthly Attendance Report & PDF</span>';
+        }
+    }
     if (lockBtn && icon) {
         if (isLocked) {
             icon.className = 'fas fa-lock text-xs text-red-500';
@@ -2826,6 +2851,8 @@ function closeModal(id) {
             if(pCont) pCont.classList.add('hidden');
             let delBox = document.getElementById('deleteBox');
             if(delBox) delBox.classList.add('hidden');
+            let attBtn = document.getElementById('modalAttReportBtn');
+            if(attBtn) attBtn.classList.add('hidden');
             let cbCont = document.getElementById('pastMonthsCheckboxes');
             if(cbCont) cbCont.innerHTML = '';
         }
@@ -2866,6 +2893,9 @@ function editStudent(index) {
 
     let delBox = document.getElementById('deleteBox');
     if (delBox) delBox.classList.remove('hidden');
+
+    let attBtn = document.getElementById('modalAttReportBtn');
+    if (attBtn) attBtn.classList.remove('hidden');
     
     let pCont = document.getElementById('pastMonthsContainer');
     if(pCont) pCont.classList.add('hidden');
@@ -3094,6 +3124,533 @@ function toggleModalLock() {
             showToast("PDF GENERATED");
         }
 
+        // ==========================================================================
+        // INDIVIDUAL STUDENT ATTENDANCE REPORT & PDF / WHATSAPP EXPORT
+        // ==========================================================================
+        function getStudentAttendanceHistory(studentName, studentClass = null) {
+            let history = [];
+            let sNameClean = (studentName || '').trim().toUpperCase();
+            
+            // 1. Check raw records if available
+            if (appData.attendanceRaw && Array.isArray(appData.attendanceRaw) && appData.attendanceRaw.length > 0) {
+                appData.attendanceRaw.forEach(r => {
+                    if (r.studentName && r.studentName.trim().toUpperCase() === sNameClean) {
+                        if (!studentClass || !r.class || r.class === studentClass) {
+                            history.push({
+                                date: r.date,
+                                class: r.class || studentClass || '',
+                                status: r.status === 'Absent' ? 'Absent' : 'Present'
+                            });
+                        }
+                    }
+                });
+            } 
+            
+            // 2. Also inspect grouped attendance sessions
+            if (appData.attendance && Array.isArray(appData.attendance)) {
+                appData.attendance.forEach(session => {
+                    if (session.records && typeof session.records === 'object') {
+                        let matchedKey = Object.keys(session.records).find(k => k.trim().toUpperCase() === sNameClean);
+                        if (matchedKey) {
+                            let st = session.records[matchedKey] === 'Absent' ? 'Absent' : 'Present';
+                            history.push({
+                                date: session.date,
+                                class: session.class || studentClass || '',
+                                status: st
+                            });
+                        }
+                    }
+                });
+            }
+
+            // De-duplicate history entries by date + class
+            let seen = new Set();
+            history = history.filter(item => {
+                let key = (item.date || '') + '|' + (item.class || '');
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            
+            // Sort chronologically (oldest to newest)
+            history.sort((a, b) => {
+                let da = new Date(a.date);
+                let db = new Date(b.date);
+                if (!isNaN(da.getTime()) && !isNaN(db.getTime())) return da - db;
+                return (a.date || '').localeCompare(b.date || '');
+            });
+
+            let totalDays = history.length;
+            let presentDays = history.filter(h => h.status === 'Present').length;
+            let absentDays = history.filter(h => h.status === 'Absent').length;
+            let percentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+            return {
+                history: history,
+                totalDays: totalDays,
+                presentDays: presentDays,
+                absentDays: absentDays,
+                percentage: percentage
+            };
+        }
+
+        function downloadStudentAttendancePDF(student) {
+            if (!student) return;
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                showToast('PDF LIBRARY LOADING...');
+                return;
+            }
+            
+            let attData = getStudentAttendanceHistory(student.name, student.class);
+            let { totalDays, presentDays, absentDays, percentage, history } = attData;
+            let now = new Date();
+            let dateStr = ("0" + now.getDate()).slice(-2) + "/" + ("0" + (now.getMonth() + 1)).slice(-2) + "/" + now.getFullYear();
+
+            let doc = new window.jspdf.jsPDF();
+            
+            // 1. Header Banner
+            doc.setFillColor(30, 41, 59); // Slate-800
+            doc.rect(0, 0, 210, 36, 'F');
+            
+            // Institute Title
+            doc.setTextColor(255, 255, 255);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(16);
+            doc.text("VIJAY SIR EDUCATION HUB", 105, 14, null, null, "center");
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(203, 213, 225); // Slate-300
+            doc.text("MONTHLY ATTENDANCE & PERFORMANCE REPORT", 105, 22, null, null, "center");
+            
+            let curMonthStr = now.toLocaleString('default', { month: 'long' }).toUpperCase();
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184); // Slate-400
+            doc.text(`Month: ${curMonthStr} ${now.getFullYear()} • Generated on: ${dateStr} • Academic Session 2026-2027`, 105, 29, null, null, "center");
+
+            // 2. Student Info Card
+            doc.setFillColor(248, 250, 252); // Slate-50
+            doc.setDrawColor(226, 232, 240); // Slate-200
+            doc.roundedRect(14, 42, 182, 28, 3, 3, 'FD');
+            
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(11);
+            doc.setTextColor(15, 23, 42); // Slate-900
+            doc.text(`STUDENT: ${student.name.toUpperCase()}`, 18, 51);
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(71, 85, 105); // Slate-600
+            doc.text(`Class: ${student.class}   |   Shift: ${(student.shift || 'Morning').toUpperCase()}   |   Phone: +91 ${student.phone || 'N/A'}`, 18, 59);
+            doc.text(`Admission Date: ${student.joinDate || student.date || 'N/A'}   |   Report Period: ${curMonthStr} ${now.getFullYear()}`, 18, 65);
+
+            // 3. Four Metric Highlight Cards
+            const cardY = 74;
+            const cardW = 42;
+            const cardH = 22;
+            const gap = 4.6;
+            
+            // Card 1: Total
+            doc.setFillColor(241, 245, 249);
+            doc.roundedRect(14, cardY, cardW, cardH, 2, 2, 'F');
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text("TOTAL SESSIONS", 14 + cardW/2, cardY + 7, null, null, "center");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.setTextColor(15, 23, 42);
+            doc.text(`${totalDays} Days`, 14 + cardW/2, cardY + 16, null, null, "center");
+
+            // Card 2: Present
+            const c2X = 14 + cardW + gap;
+            doc.setFillColor(236, 253, 245); // Emerald-50
+            doc.roundedRect(c2X, cardY, cardW, cardH, 2, 2, 'F');
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(5, 150, 105); // Emerald-600
+            doc.text("PRESENT DAYS", c2X + cardW/2, cardY + 7, null, null, "center");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.setTextColor(4, 120, 87); // Emerald-700
+            doc.text(`${presentDays} Days`, c2X + cardW/2, cardY + 16, null, null, "center");
+
+            // Card 3: Absent
+            const c3X = c2X + cardW + gap;
+            doc.setFillColor(254, 242, 242); // Red-50
+            doc.roundedRect(c3X, cardY, cardW, cardH, 2, 2, 'F');
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(220, 38, 38); // Red-600
+            doc.text("ABSENT DAYS", c3X + cardW/2, cardY + 7, null, null, "center");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.setTextColor(185, 28, 28); // Red-700
+            doc.text(`${absentDays} Days`, c3X + cardW/2, cardY + 16, null, null, "center");
+
+            // Card 4: Rate
+            const c4X = c3X + cardW + gap;
+            let rateBg = percentage >= 75 ? [236, 253, 245] : (percentage >= 60 ? [254, 249, 195] : [254, 242, 242]);
+            let rateTxt = percentage >= 75 ? [4, 120, 87] : (percentage >= 60 ? [161, 98, 7] : [185, 28, 28]);
+            doc.setFillColor(rateBg[0], rateBg[1], rateBg[2]);
+            doc.roundedRect(c4X, cardY, cardW, cardH, 2, 2, 'F');
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(rateTxt[0], rateTxt[1], rateTxt[2]);
+            doc.text("ATTENDANCE %", c4X + cardW/2, cardY + 7, null, null, "center");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.text(`${percentage}%`, c4X + cardW/2, cardY + 16, null, null, "center");
+
+            // 4. AutoTable for Detailed Date-by-Date Log
+            let tableHeaders = [["#", "Date", "Day", "Class", "Shift", "Status"]];
+            let tableData = [];
+            
+            if (history.length === 0) {
+                tableData.push(["-", "No sessions recorded yet", "-", student.class || "-", student.shift || "Morning", "N/A"]);
+            } else {
+                history.forEach((h, idx) => {
+                    let dayName = "-";
+                    let formattedDate = h.date;
+                    try {
+                        let d = new Date(h.date);
+                        if (!isNaN(d.getTime())) {
+                            dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                            formattedDate = ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
+                        }
+                    } catch(e) {}
+                    tableData.push([
+                        idx + 1,
+                        formattedDate,
+                        dayName,
+                        h.class || student.class,
+                        student.shift || "Morning",
+                        h.status.toUpperCase()
+                    ]);
+                });
+            }
+
+            doc.autoTable({
+                startY: 102,
+                head: tableHeaders,
+                body: tableData,
+                theme: 'striped',
+                styles: {
+                    fontSize: 8.5,
+                    cellPadding: 2.5,
+                    valign: 'middle'
+                },
+                headStyles: {
+                    fillColor: [30, 41, 59],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center'
+                },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 12 },
+                    1: { halign: 'center', cellWidth: 32 },
+                    2: { halign: 'center', cellWidth: 26 },
+                    3: { halign: 'center', cellWidth: 28 },
+                    4: { halign: 'center', cellWidth: 32 },
+                    5: { halign: 'center', cellWidth: 36, fontStyle: 'bold' }
+                },
+                didParseCell: function(data) {
+                    if (data.section === 'body' && data.column.index === 5) {
+                        if (data.cell.raw === 'PRESENT') {
+                            data.cell.styles.textColor = [22, 163, 74];
+                        } else if (data.cell.raw === 'ABSENT') {
+                            data.cell.styles.textColor = [220, 38, 38];
+                        }
+                    }
+                },
+                margin: { left: 14, right: 14 }
+            });
+
+            // 5. Remarks & Signatory Footer
+            let finalY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 120) + 8;
+            if (finalY > 255) {
+                doc.addPage();
+                finalY = 20;
+            }
+
+            let remarkText = percentage >= 85 
+                ? "Performance Assessment: Excellent Attendance! Consistent class presence supports superior academic outcomes."
+                : (percentage >= 70 
+                    ? "Performance Assessment: Good Attendance. Regular presence ensures steady learning progress."
+                    : "Performance Assessment: Attendance Alert! Regular attendance is urgently recommended to prevent concept loss.");
+
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.roundedRect(14, finalY, 182, 14, 2, 2, 'FD');
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(8);
+            doc.setTextColor(71, 85, 105);
+            doc.text(remarkText, 18, finalY + 8.5);
+
+            // Signature line
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.setTextColor(30, 41, 59);
+            doc.text("VIJAY SIR", 170, finalY + 24, null, null, "center");
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text("Director / Teacher", 170, finalY + 28, null, null, "center");
+            doc.setDrawColor(148, 163, 184);
+            doc.line(150, finalY + 20, 190, finalY + 20);
+
+            // Bottom banner
+            doc.setFontSize(7.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Vijay Sir Education Hub • Dedicated to Quality Education & Student Excellence", 105, 290, null, null, "center");
+
+            let cleanStudent = (student.name || 'Student').trim().toUpperCase().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+            let cleanDate = dateStr.replace(/\//g, '-');
+            let fileName = `${cleanStudent}_VSEH_Monthly_Attendance_${cleanDate}.pdf`;
+            doc.save(fileName);
+            showToast("ATTENDANCE PDF GENERATED");
+        }
+
+        function formatStudentAttendanceWhatsAppMsg(student, attData) {
+            let { totalDays, presentDays, absentDays, percentage, history } = attData;
+            let perfStatus = percentage >= 85 ? '🌟 Excellent' : (percentage >= 75 ? '👍 Good' : (percentage >= 60 ? '⚠️ Average' : '🚨 Needs Improvement'));
+            
+            let recentList = '';
+            if (history && history.length > 0) {
+                let recentRecords = history.slice(-7);
+                let lines = recentRecords.map(r => {
+                    let icon = r.status === 'Present' ? '✅' : '❌';
+                    let dStr = r.date;
+                    try {
+                        let d = new Date(r.date);
+                        if (!isNaN(d.getTime())) dStr = ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2);
+                    } catch(e) {}
+                    return `  ${icon} ${dStr}: *${r.status.toUpperCase()}*`;
+                });
+                recentList = `\n\n📅 *Recent Sessions:*\n${lines.join('\n')}`;
+            }
+            
+            let msg = `*VIJAY SIR EDUCATION HUB* 🎓\n` +
+                      `━━━━━━━━━━━━━━━━━━━\n` +
+                      `📋 *STUDENT ATTENDANCE REPORT*\n` +
+                      `━━━━━━━━━━━━━━━━━━━\n\n` +
+                      `Respected Parent,\n` +
+                      `Here is the official coaching attendance record for your ward:\n\n` +
+                      `👤 *Student Name:* ${student.name.toUpperCase()}\n` +
+                      `📚 *Class:* ${student.class} (${(student.shift || 'Morning').toUpperCase()} Shift)\n` +
+                      `📞 *Contact:* +91 ${student.phone || 'N/A'}\n\n` +
+                      `📊 *Attendance Summary:*\n` +
+                      `• Total Sessions: *${totalDays} Days*\n` +
+                      `• Present: *${presentDays} Days* ✅\n` +
+                      `• Absent: *${absentDays} Days* ❌\n` +
+                      `• Attendance Rate: *${percentage}%* (${perfStatus})\n` +
+                      `${recentList}\n\n` +
+                      `💡 *Remark:* Regular attendance ensures high academic conceptual understanding and top exam scores.\n\n` +
+                      `With Best Regards,\n` +
+                      `*VIJAY SIR EDUCATION HUB*`;
+            return msg;
+        }
+
+        async function sendStudentAttendanceWhatsApp(student) {
+            if (!student) return;
+            if (!student.phone) {
+                showToast("NO PHONE NUMBER FOR THIS STUDENT!");
+                return;
+            }
+            let attData = getStudentAttendanceHistory(student.name, student.class);
+            let msg = formatStudentAttendanceWhatsAppMsg(student, attData);
+            
+            showToast(`DISPATCHING ATTENDANCE REPORT TO WHATSAPP...`);
+            let res = await gasApi('stealthWhatsAppTrigger', { phone: student.phone, message: msg });
+            notifyWhatsAppStatus(res, student.name, student.phone, 'Attendance Report', { message: msg });
+        }
+
+        function openStudentAttendanceWhatsAppWeb(student) {
+            if (!student) return;
+            if (!student.phone) {
+                showToast("NO PHONE NUMBER FOR THIS STUDENT!");
+                return;
+            }
+            let attData = getStudentAttendanceHistory(student.name, student.class);
+            let msg = formatStudentAttendanceWhatsAppMsg(student, attData);
+            let cleanPhone = String(student.phone).replace(/\D/g, '');
+            if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+            let url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+            window.open(url, '_blank');
+        }
+
+        let currentReportStudent = null;
+
+        function openStudentAttendanceReport(index) {
+            let s = (appData.students && appData.students[index]) ? appData.students[index] : null;
+            if (!s) return;
+            openStudentAttendanceReportWithStudent(s);
+        }
+
+        function openStudentAttendanceReportByName(name, cls) {
+            let s = (appData.students || []).find(x => x.name.toUpperCase() === (name || '').toUpperCase() && (!cls || x.class === cls));
+            if (s) {
+                openStudentAttendanceReportWithStudent(s);
+            } else {
+                openStudentAttendanceReportWithStudent({ name: name, class: cls || '', shift: 'Morning', phone: '' });
+            }
+        }
+
+        function openStudentAttendanceReportFromEditModal() {
+            if (modalLocked) {
+                showToast("UNLOCK EDITING FIRST 🔒 (Tap lock icon above to unlock)");
+                return;
+            }
+            let rowIndex = document.getElementById('stuRowIndex') ? document.getElementById('stuRowIndex').value : null;
+            if (rowIndex !== null && rowIndex !== '' && rowIndex >= 0 && appData.students && appData.students[rowIndex]) {
+                let s = appData.students[rowIndex];
+                closeModal('addModal');
+                setTimeout(() => openStudentAttendanceReportWithStudent(s), 350);
+            }
+        }
+
+        var attWaLocked = true;
+
+        function toggleAttWaLock() {
+            attWaLocked = !attWaLocked;
+            applyAttWaLockUI();
+            showToast(attWaLocked ? "WHATSAPP REPORT LOCKED 🔒" : "WHATSAPP REPORT UNLOCKED 🔓 (Ready to send)");
+        }
+
+        function applyAttWaLockUI() {
+            let lockBtn = document.getElementById('attWaLockBtn');
+            let lockIcon = document.getElementById('attWaLockIcon');
+            let waBtn = document.getElementById('attModalWaBtn');
+            let waBtnText = document.getElementById('attModalWaBtnText');
+            
+            if (attWaLocked) {
+                if (lockBtn) {
+                    lockBtn.className = 'w-12 h-11 rounded-xl bg-red-50 text-red-500 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800 flex items-center justify-center text-sm shadow-sm active:scale-90 transition shrink-0';
+                    lockBtn.title = 'WhatsApp sending is LOCKED (Tap to unlock)';
+                }
+                if (lockIcon) lockIcon.className = 'fas fa-lock';
+                if (waBtn) {
+                    waBtn.className = 'flex-1 flex items-center justify-center space-x-2 py-3 px-3 rounded-xl bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-gray-500 font-black text-xs uppercase tracking-wider cursor-not-allowed opacity-60 transition active:scale-[0.98]';
+                }
+                if (waBtnText) waBtnText.innerHTML = 'WhatsApp Locked (Tap 🔒)';
+            } else {
+                if (lockBtn) {
+                    lockBtn.className = 'w-12 h-11 rounded-xl bg-green-50 text-green-600 border border-green-200 dark:bg-green-950/40 dark:text-green-400 dark:border-green-800 flex items-center justify-center text-sm shadow-sm active:scale-90 transition shrink-0';
+                    lockBtn.title = 'WhatsApp sending is UNLOCKED (Tap to lock)';
+                }
+                if (lockIcon) lockIcon.className = 'fas fa-unlock';
+                if (waBtn) {
+                    waBtn.className = 'flex-1 flex items-center justify-center space-x-2 py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider shadow-md active:scale-95 transition cursor-pointer';
+                }
+                if (waBtnText) waBtnText.innerHTML = 'Send Report to Parent';
+            }
+        }
+
+        function triggerStudentAttendanceWhatsApp() {
+            if (attWaLocked) {
+                showToast("UNLOCK FIRST 🔒 (Tap 🔒 lock button to send WhatsApp message)");
+                return;
+            }
+            if (currentReportStudent) {
+                sendStudentAttendanceWhatsApp(currentReportStudent);
+            }
+        }
+
+        function openStudentAttendanceReportWithStudent(student) {
+            currentReportStudent = student;
+            attWaLocked = true;
+            applyAttWaLockUI();
+            let attData = getStudentAttendanceHistory(student.name, student.class);
+            
+            let nameEl = document.getElementById('attModalStudentName');
+            let metaEl = document.getElementById('attModalStudentMeta');
+            let totEl = document.getElementById('attModalTotal');
+            let presEl = document.getElementById('attModalPresent');
+            let absEl = document.getElementById('attModalAbsent');
+            let rateEl = document.getElementById('attModalRate');
+            let logCntEl = document.getElementById('attModalLogCount');
+            let histContainer = document.getElementById('attModalHistoryList');
+            
+            if (nameEl) nameEl.innerText = student.name.toUpperCase();
+            if (metaEl) metaEl.innerText = `Class: ${student.class} • Shift: ${(student.shift||'Morning').toUpperCase()} • +91 ${student.phone || 'No Phone'}`;
+            if (totEl) totEl.innerText = attData.totalDays;
+            if (presEl) presEl.innerText = attData.presentDays;
+            if (absEl) absEl.innerText = attData.absentDays;
+            if (rateEl) rateEl.innerText = `${attData.percentage}%`;
+            if (logCntEl) logCntEl.innerText = `${attData.totalDays} sessions`;
+            
+            if (histContainer) {
+                histContainer.innerHTML = '';
+                if (attData.history.length === 0) {
+                    histContainer.innerHTML = '<div class="p-4 text-center text-xs font-bold text-gray-400 bg-gray-50 rounded-xl">No attendance sessions recorded yet for this student.</div>';
+                } else {
+                    let reversed = [...attData.history].reverse();
+                    reversed.forEach(h => {
+                        let isPresent = h.status === 'Present';
+                        let dayName = '-';
+                        let dateDisplay = h.date;
+                        try {
+                            let d = new Date(h.date);
+                            if (!isNaN(d.getTime())) {
+                                dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                                dateDisplay = ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
+                            }
+                        } catch(e) {}
+                        
+                        let badgeClass = isPresent 
+                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+                            : 'bg-rose-100 text-rose-700 border border-rose-200';
+                        let iconClass = isPresent ? 'fa-check text-emerald-600' : 'fa-times text-rose-600';
+                        
+                        histContainer.insertAdjacentHTML('beforeend', `
+                            <div class="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl border border-gray-100 mb-1.5">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-6 h-6 rounded-lg ${isPresent ? 'bg-emerald-50' : 'bg-rose-50'} flex items-center justify-center text-xs">
+                                        <i class="fas ${iconClass}"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-black text-gray-800">${dateDisplay}</p>
+                                        <p class="text-[9px] font-bold text-gray-400 uppercase tracking-wider">${dayName} • Class ${h.class || student.class}</p>
+                                    </div>
+                                </div>
+                                <span class="text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${badgeClass}">
+                                    ${h.status.toUpperCase()}
+                                </span>
+                            </div>
+                        `);
+                    });
+                }
+            }
+
+            let pdfBtn = document.getElementById('attModalPdfBtn');
+            if (pdfBtn) pdfBtn.onclick = () => downloadStudentAttendancePDF(currentReportStudent);
+
+            let modal = document.getElementById('studentAttendanceModal');
+            let content = document.getElementById('studentAttendanceModalContent');
+            if (modal && content) {
+                modal.classList.remove('hidden');
+                setTimeout(() => {
+                    content.classList.remove('translate-y-full');
+                    content.classList.add('translate-y-0');
+                }, 10);
+            }
+        }
+
+        function closeStudentAttendanceModal() {
+            let modal = document.getElementById('studentAttendanceModal');
+            let content = document.getElementById('studentAttendanceModalContent');
+            if (modal && content) {
+                content.classList.remove('translate-y-0');
+                content.classList.add('translate-y-full');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    currentReportStudent = null;
+                    attWaLocked = true;
+                    applyAttWaLockUI();
+                }, 200);
+            }
+        }
+
         function filterClasses(shiftId, classId) {
             let shiftElem = document.getElementById(shiftId);
             let shift = shiftElem ? shiftElem.value : 'All';
@@ -3177,6 +3734,7 @@ async function saveStudentToServer(e) {
     }
     
     // Handle past paid months directly in payload
+    let pastPaidMonthNames = [];
     if (!isEdit) {
         let noCb = document.getElementById('past_paid_no');
         if (!noCb || !noCb.checked) {
@@ -3185,6 +3743,7 @@ async function saveStudentToServer(e) {
                 let pastPayments = [];
                 checkboxes.forEach(cb => {
                     let m = cb.value;
+                    pastPaidMonthNames.push(m);
                     pastPayments.push({
                         studentName: data.name,
                         className: data.class,
@@ -3200,12 +3759,12 @@ async function saveStudentToServer(e) {
         }
     }
     
-        let result = await gasApi('saveStudent', data);
+    let result = await gasApi('saveStudent', data);
     if(result && result.status === 'success') {
         appData = result;
         
         // ==========================================================================
-        // INSTANT ON-SAVE OVERDUE REMINDER (EXACTLY ONCE, IMMUNE TO RELOAD)
+        // INSTANT ON-SAVE OVERDUE REMINDER / PAST PAID MONTH RECEIPT
         // ==========================================================================
         try {
             let shouldSendReminder = (typeof stuSendReminderEnabled !== 'undefined') 
@@ -3216,7 +3775,24 @@ async function saveStudentToServer(e) {
                 let savedStudent = (appData.students || []).find(s => s.id === data.id || (s.name === data.name && s.class === data.class && (s.shift || 'Morning') === data.shift)) || data;
                 if (savedStudent && savedStudent.phone) {
                     let dues = calculateStudentDues(savedStudent, appData.payments);
-                    if (dues && dues.isOverdue && dues.pendingMonths && dues.pendingMonths.length > 0) {
+
+                    // 1. If past months were paid at admission, dispatch Fee Receipt for the latest/last paid month
+                    if (pastPaidMonthNames.length > 0) {
+                        let lastPaidMonth = pastPaidMonthNames[pastPaidMonthNames.length - 1];
+                        let paidAmt = savedStudent.fee || data.fee || 0;
+                        let pendingNote = '';
+                        if (dues && dues.isOverdue && dues.pendingMonths && dues.pendingMonths.length > 0) {
+                            pendingNote = `\n\n📌 *Pending Balance:* Monthly fee for *${dues.formattedPendingText}* (₹${dues.totalPendingAmount}) remains due.`;
+                        }
+                        let receiptMsg = `Fee Payment Receipt 🧾✨\n\nDear Parent,\n\nWe have received monthly fee payment of *₹${paidAmt}* for *${savedStudent.name.toUpperCase()}* for the month of *${lastPaidMonth.toUpperCase()}*.\n\n🎉 Payment recorded successfully upon student admission.${pendingNote}\n\nThank you for your trust and support in our institute! 🌟\n\nWith Best Regards,\n*VIJAY SIR EDUCATION HUB*`;
+
+                        showToast(`DISPATCHING FEE RECEIPT FOR ${lastPaidMonth.toUpperCase()}...`);
+                        gasApi('stealthWhatsAppTrigger', { phone: savedStudent.phone, message: receiptMsg }).then(res => {
+                            notifyWhatsAppStatus(res, savedStudent.name, savedStudent.phone, `Fee Receipt (${lastPaidMonth})`, { message: receiptMsg });
+                        }).catch(()=>{});
+                    }
+                    // 2. Otherwise, if there are overdue months, dispatch Due Reminder
+                    else if (dues && dues.isOverdue && dues.pendingMonths && dues.pendingMonths.length > 0) {
                         let now = new Date();
                         let cycleYear = now.getFullYear();
                         let logKey = (savedStudent.id || savedStudent.name).trim().toUpperCase() + '_' + dues.pendingMonths[0].toUpperCase() + '_' + cycleYear;
@@ -3708,6 +4284,71 @@ function updateActiveShiftBadge() {
     }
 }
 
+function getStudentStatusBadge(student, dues, payments) {
+    if (!student) return '';
+    
+    // 1. If student has overdue pending months:
+    if (dues && dues.isOverdue && dues.totalPendingAmount > 0) {
+        return `<span class="text-[8px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded-md uppercase">DUE ₹${dues.totalPendingAmount}</span>`;
+    }
+
+    let sName = (student.name || '').trim().toUpperCase();
+    let sClass = (student.class || '').trim();
+    let now = new Date();
+    let currentMonth = now.toLocaleString('default', { month: 'long' }).toLowerCase();
+    let currentYear = now.getFullYear();
+
+    let hasPaidCurrent = false;
+    let hasAnyPaid = false;
+
+    // Check recorded payments
+    (payments || []).forEach(p => {
+        let matchName = (p.studentName || '').trim().toUpperCase() === sName;
+        let matchClass = !sClass || !p.className || (p.className || '').trim() === sClass;
+        let matchId = student.id && p.studentId && (p.studentId === student.id);
+        if (matchId || (matchName && matchClass)) {
+            hasAnyPaid = true;
+            let pM = (p.month || '').toLowerCase();
+            if (pM.includes(currentMonth)) {
+                let pd = new Date(p.date);
+                if (!isNaN(pd.getTime()) && pd.getFullYear() === currentYear) {
+                    hasPaidCurrent = true;
+                } else if (isNaN(pd.getTime())) {
+                    hasPaidCurrent = true;
+                }
+            }
+        }
+    });
+
+    // Check pastPayments (if recorded during admission)
+    if (student.pastPayments) {
+        try {
+            let past = typeof student.pastPayments === 'string' ? JSON.parse(student.pastPayments) : student.pastPayments;
+            if (Array.isArray(past) && past.length > 0) {
+                hasAnyPaid = true;
+                past.forEach(p => {
+                    if (p.month && p.month.toLowerCase().includes(currentMonth)) {
+                        hasPaidCurrent = true;
+                    }
+                });
+            }
+        } catch(e) {}
+    }
+
+    // 2. If student actually paid for the current month
+    if (hasPaidCurrent) {
+        return `<span class="text-[8px] font-black bg-green-100 text-green-600 px-2 py-0.5 rounded-md uppercase">PAID</span>`;
+    }
+
+    // 3. If student has never made any payment (e.g. newly added today/recently)
+    if (!hasAnyPaid) {
+        return `<span class="text-[8px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md uppercase">NEW ADMISSION</span>`;
+    }
+
+    // 4. If previous months were paid but current active cycle is unpaid (and not yet overdue)
+    return `<span class="text-[8px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md uppercase">UNPAID</span>`;
+}
+
 function renderStudents() {
     updateStudentCountBadges();
     let list = document.getElementById('students-list');
@@ -3759,9 +4400,7 @@ function renderStudents() {
             classStudents.forEach(s => {
                 let realIndex = (appData.students || []).indexOf(s);
                 let dues = calculateStudentDues(s, appData.payments);
-                let badge = !dues.isOverdue 
-                    ? '<span class="text-[8px] font-black bg-green-100 text-green-600 px-2 py-0.5 rounded-md uppercase">PAID</span>' 
-                    : `<span class="text-[8px] font-black bg-red-100 text-red-500 px-2 py-0.5 rounded-md uppercase">DUE ₹${dues.totalPendingAmount}</span>`;
+                let badge = getStudentStatusBadge(s, dues, appData.payments);
                 
                 list.insertAdjacentHTML('beforeend', `
                     <div onclick="editStudent(${realIndex})" class="glass-panel p-4 rounded-24 flex justify-between items-center cursor-pointer active:scale-[0.98] transition mb-2 shadow-sm">
@@ -3782,9 +4421,7 @@ function renderStudents() {
         students.forEach((s) => {
             let realIndex = (appData.students || []).indexOf(s);
             let dues = calculateStudentDues(s, appData.payments);
-            let badge = !dues.isOverdue 
-                ? '<span class="text-[8px] font-black bg-green-100 text-green-600 px-2 py-0.5 rounded-md uppercase">PAID</span>' 
-                : `<span class="text-[8px] font-black bg-red-100 text-red-500 px-2 py-0.5 rounded-md uppercase">DUE ₹${dues.totalPendingAmount}</span>`;
+            let badge = getStudentStatusBadge(s, dues, appData.payments);
             
             list.insertAdjacentHTML('beforeend', `
                 <div onclick="editStudent(${realIndex})" class="glass-panel p-4 rounded-24 flex justify-between items-center cursor-pointer active:scale-[0.98] transition mb-2 shadow-sm">

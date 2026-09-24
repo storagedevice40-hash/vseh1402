@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vseh-pro-cache-v23';
+const CACHE_NAME = 'vseh-pro-cache-v25';
 const urlsToCache = [
   './',
   './index.html',
